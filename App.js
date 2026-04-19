@@ -10,14 +10,10 @@ import { ProductProvider } from './context/ProductContext';
 import RootNavigator from './navigation/RootNavigator';
 import MultiAccountProvider, { useMultiAccount } from './context/MultiAccountContext';
 import PinEntryScreen from './screens/PinEntryScreen';
-import { useNavigation } from 'expo-router';
+import LoginScreen from './screens/auth/LoginScreen'; // ← import direct
 
-
-// Enable screens for better performance
 enableScreens();
 
-
-// Custom theme
 const MyTheme = {
   ...DefaultTheme,
   colors: {
@@ -31,7 +27,6 @@ const MyTheme = {
   },
 };
 
-// Deep linking configuration
 const linking = {
   prefixes: ['myecommerce://', 'https://myecommerce.com'],
   config: {
@@ -82,50 +77,7 @@ const linking = {
   },
 };
 
-// ─── Gate multi-compte ────────────────────────────────────────────────────────
-// Affiché OBLIGATOIREMENT à chaque ouverture de l'app.
-// - 0 comptes enregistrés  → accès direct (premier lancement)
-// - Comptes avec PIN        → PinEntryScreen obligatoire
-// - "Mot de passe"          → navigue vers l'écran Login via RootNavigator
-//
-// `authenticated` repart à false à chaque lancement : on ne peut jamais
-// contourner la fenêtre de connexion.
-
-const AppGate = ({ children, onNavigateToLogin}) => {
-  const { isLoading, accounts } = useMultiAccount();
-  const [authenticated, setAuthenticated] = useState(false);
-
-  if (isLoading) {
-    return (
-      <View style={gateStyles.loader}>
-        <ActivityIndicator size="large" color="#6366F1" />
-      </View>
-    );
-  }
-
-  // Premier lancement : aucun compte enregistré → accès direct au login normal
-  if (accounts.length === 0) {
-    return <>{children}</>;
-  }
-
-  // Pas encore authentifié dans cette session → écran PIN obligatoire
-  if (!authenticated) {
-    return (
-      <PinEntryScreen
-        // PIN correct → switch automatique + accès à l'app
-        onSuccess={() => setAuthenticated(true)}
-        // Préfère le mot de passe → ouvre l'app puis navigue vers Login
-        onUsePassword={() => {
-          setAuthenticated(true);
-          onNavigateToLogin && onNavigateToLogin();
-        }}
-        // Pas de onSkip → la connexion est obligatoire
-      />
-    );
-  }
-
-  return <>{children}</>;
-};
+// ─── Styles partagés ──────────────────────────────────────────────────────────
 
 const gateStyles = StyleSheet.create({
   loader: {
@@ -136,42 +88,98 @@ const gateStyles = StyleSheet.create({
   },
 });
 
-// ─── Root App component ───────────────────────────────────────────────────────
+// ─── AppGate ──────────────────────────────────────────────────────────────────
+//
+//  Système à 3 états hermétiques :
+//
+//  'pin'      → PinEntryScreen affiché, RIEN d'autre n'est monté
+//  'password' → LoginScreen affiché en direct (hors NavigationContainer),
+//               RIEN d'autre n'est monté → 0 risque d'accès aux autres écrans
+//  'unlocked' → NavigationContainer + RootNavigator montés normalement
+//
+//  Le NavigationContainer (et donc toute la navigation) n'est JAMAIS monté
+//  tant que l'utilisateur n'est pas authentifié. Il est physiquement
+//  impossible d'accéder à un autre écran.
+
+const AppGate = () => {
+  const { isLoading, accounts } = useMultiAccount();
+
+  // 'pin' | 'password' | 'unlocked'
+  const [gateState, setGateState] = useState('pin');
+
+  // ── Chargement initial ────────────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <View style={gateStyles.loader}>
+        <ActivityIndicator size="large" color="#6366F1" />
+      </View>
+    );
+  }
+
+  // ── Premier lancement : aucun compte → accès direct ───────────────────────
+  if (accounts.length === 0 || gateState === 'unlocked') {
+    return (
+      <NavigationContainer linking={linking} theme={MyTheme}>
+        <RootNavigator />
+      </NavigationContainer>
+    );
+  }
+
+  // ── État PIN ──────────────────────────────────────────────────────────────
+  // NavigationContainer PAS monté → impossible d'accéder à quoi que ce soit
+  if (gateState === 'pin') {
+    return (
+      <PinEntryScreen
+        // PIN correct → accès immédiat et total à l'app
+        onSuccess={() => setGateState('unlocked')}
+        // Préfère le mot de passe → bascule vers Login isolé
+        onUsePassword={() => setGateState('password')}
+      />
+    );
+  }
+
+  // ── État PASSWORD ─────────────────────────────────────────────────────────
+  // LoginScreen rendu DIRECTEMENT, hors NavigationContainer.
+  // L'utilisateur ne voit QUE cet écran.
+  // Retour arrière → retour au PIN (jamais vers l'app).
+  if (gateState === 'password') {
+    return (
+      <LoginScreen
+        // Connexion réussie → déverrouillage total
+        onLoginSuccess={() => setGateState('unlocked')}
+        // Retour → retour au PIN, jamais vers l'app
+        onBack={() => setGateState('pin')}
+        // Désactive la navigation interne de LoginScreen
+        // car on est hors NavigationContainer ici
+        // standalone
+      />
+    );
+  }
+
+  return null;
+};
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  // Référence vers la navigation pour rediriger vers Login si besoin
-  const navigationRef = React.useRef(null);
-
-  const handleNavigateToLogin = () => {
-    if (navigationRef.current) {
-      navigationRef.current.navigate('Auth', { screen: 'Login' });
-    }
-  };
-
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />
-      {/* MultiAccountProvider doit envelopper AuthProvider */}
       <MultiAccountProvider>
-        <AppGate onNavigateToLogin={handleNavigateToLogin}>
-          <AuthProvider>
-            <ProductProvider>
-              <CartProvider>
-                <NavigationContainer
-                  ref={navigationRef}
-                  linking={linking}
-                  theme={MyTheme}
-                >
-                  <RootNavigator />
-                </NavigationContainer>
-              </CartProvider>
-            </ProductProvider>
-          </AuthProvider>
-        </AppGate>
+        <AuthProvider>
+          <ProductProvider>
+            <CartProvider>
+              {/*
+                AppGate gère lui-même le NavigationContainer.
+                Il ne le monte QUE quand gateState === 'unlocked'.
+              */}
+              <AppGate />
+            </CartProvider>
+          </ProductProvider>
+        </AuthProvider>
       </MultiAccountProvider>
     </SafeAreaProvider>
   );
 }
 
-// Register the App component
 AppRegistry.registerComponent('main', () => App);
