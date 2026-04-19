@@ -124,21 +124,21 @@ const PinModal: React.FC<PinModalProps> = ({
         <View style={modalStyles.sheet}>
           {/* Handle */}
           <View style={modalStyles.handle} />
-      {/*
+      
           <Text style={modalStyles.title}>{title}</Text>
           {account && (
             <View style={[modalStyles.chip, { backgroundColor: account.avatarColor + '22' }]}>
               <View style={[modalStyles.chipDot, { backgroundColor: account.avatarColor }]}>
                 <Text style={modalStyles.chipInitial}>
-                   {account.user.name.charAt(0).toUpperCase()} 
+                   {account?.user?.firstname.charAt(0).toUpperCase()} 
                 </Text>
               </View>
               <Text style={[modalStyles.chipName, { color: account.avatarColor }]}>
-                {account.user.name}
+                {account?.user?.firstname}
               </Text>
             </View>
           )}
-        */}
+       
           {/* Dots */}
           <Animated.View
             style={[modalStyles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}
