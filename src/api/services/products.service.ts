@@ -8,6 +8,11 @@ export const productsService = {
     return response.data;  // Ajustement pour s'adapter à la structure de réponse
   },
 
+  async getProductsByShop(shopId: string, params: ProductsQueryParams = {}): Promise<PaginatedResponse<Product>> {
+    const response = await apiClient.get<ApiResponse<PaginatedResponse<Product>>>(`/shops/${shopId}/products`, { params });
+    return response.data;  // Ajustement pour s'adapter à la structure de réponse
+  },
+
   async getProductById(id: string): Promise<Product> {
     const response = await apiClient.get<ApiResponse<Product>>(`/products/${id}`);
     return response.data;

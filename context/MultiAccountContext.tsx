@@ -6,8 +6,11 @@ import React, {
   useEffect,
   useCallback,
 } from 'react';
-import { MultiAccountStorage, SavedAccount, MultiAccountStore, AccountUser } from '@/utils/multiAccountStorage';
-
+import { SavedAccount, MultiAccountStore } from '@/src/@types/models';
+import { MultiAccountStorage } from '@/utils/multiAccountStorage';
+import { AuthStorage } from '@/utils/storage';
+import { storage } from '@/utils/storage';
+import { AccountUser } from '@/src/@types/models';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type MultiAccountContextType = {
@@ -98,6 +101,18 @@ export const MultiAccountProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     loadStore();
   }, [loadStore]);
+
+  // Update auth_token in storage when active account changes
+  useEffect(() => {
+    const updateAuthToken = async () => {
+      if (activeAccount?.token) {
+        await MultiAccountStorage.saveAuthToken(activeAccount.token);
+      } else {
+        await MultiAccountStorage.clearAuthToken();
+      }
+    };
+    updateAuthToken();
+  }, [activeAccount]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 

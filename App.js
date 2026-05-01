@@ -11,6 +11,7 @@ import RootNavigator from './navigation/RootNavigator';
 import MultiAccountProvider, { useMultiAccount } from './context/MultiAccountContext';
 import PinEntryScreen from './screens/PinEntryScreen';
 import LoginScreen from './screens/auth/LoginScreen'; // ← import direct
+import OfflineProvider from './context/OfflineContext';
 
 enableScreens();
 
@@ -142,7 +143,7 @@ const AppGate = () => {
   // LoginScreen rendu DIRECTEMENT, hors NavigationContainer.
   // L'utilisateur ne voit QUE cet écran.
   // Retour arrière → retour au PIN (jamais vers l'app).
-  if (gateState === 'password') {
+  if (gateState === 'password') {    
     return (
       <LoginScreen
         // Connexion réussie → déverrouillage total
@@ -167,15 +168,17 @@ export default function App() {
       <StatusBar barStyle="dark-content" />
       <MultiAccountProvider>
         <AuthProvider>
-          <ProductProvider>
-            <CartProvider>
-              {/*
-                AppGate gère lui-même le NavigationContainer.
-                Il ne le monte QUE quand gateState === 'unlocked'.
-              */}
-              <AppGate />
-            </CartProvider>
-          </ProductProvider>
+          <OfflineProvider>
+            <ProductProvider>
+              <CartProvider>
+                {/*
+                  AppGate gère lui-même le NavigationContainer.
+                  Il ne le monte QUE quand gateState === 'unlocked'.
+                */}
+                <AppGate />
+              </CartProvider>
+            </ProductProvider>
+          </OfflineProvider>
         </AuthProvider>
       </MultiAccountProvider>
     </SafeAreaProvider>

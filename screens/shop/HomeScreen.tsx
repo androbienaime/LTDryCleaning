@@ -51,7 +51,7 @@ const HomeScreen = () => {
       <SafeAreaView style={{ backgroundColor: colors.background.primary, flex: 1 }}>
         <ThemedView>
           <Header />
-          <CategoriesList />
+          {/* <CategoriesList /> */}
           <ProductProvider initialLimit={6}>
             <FlatList
               data={[1]} // dummy item
@@ -60,11 +60,11 @@ const HomeScreen = () => {
               onRefresh={onRefresh}
               renderItem={() => (
                 <View>
-                  <ProductFeatured 
+                  {/* <ProductFeatured 
                     refreshTrigger={refreshTrigger}
                     onLoadStart={showGlobalLoading}
                     onLoadEnd={hideGlobalLoading}
-                  />
+                  /> */}
                   <ProductList 
                     refreshTrigger={refreshTrigger} 
                     // onLoadStart={showGlobalLoading}

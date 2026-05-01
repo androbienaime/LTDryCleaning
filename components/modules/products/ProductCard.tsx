@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { Dimensions, Pressable, StyleSheet, Text, View, Image } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,6 +28,15 @@ const ProductCard = ({ item, index }: Props) => {
   const handleProductDetails = () =>{
     navigation.navigate("ProductDetails", {product: item});
   }
+
+  const sources = [
+    item.coverImageLocal,
+    item.coverImage,
+    "https://placehold.co/600x400"
+  ].filter(Boolean);
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+
   return (
     <Pressable onPress={handleProductDetails}>
       <Animated.View
@@ -35,9 +44,14 @@ const ProductCard = ({ item, index }: Props) => {
         entering={FadeInDown.delay(300 + index * 100).duration(500)}
       >
         {/* Product Image */}
-        <Image
-          source={{ uri: item.coverImage }}
-          style={styles.productImg} 
+       <Image
+          source={{ uri: sources[currentIndex] }}
+          style={styles.productImg}
+          onError={() => {
+            if (currentIndex < sources.length - 1) {
+              setCurrentIndex(currentIndex + 1);
+            }
+          }}
         />
 
         {/* Profile in corner */}

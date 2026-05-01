@@ -1,23 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AccountUser } from '@/src/@types/models';
+import { AuthStorage } from './storage';
+import { SavedAccount, MultiAccountStore } from '@/src/@types/models';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type SavedAccount = {
-  id: string;              // uuid local
-  user: AccountUser;
-  token: string;
-  refreshToken?: string;
-  pinHash: string | null;  // null = pas de PIN configuré
-  avatarColor: string;     // couleur générée automatiquement
-  addedAt: number;
-  lastUsedAt: number;
-  isActive: boolean;
-};
 
-export type MultiAccountStore = {
-  accounts: SavedAccount[];
-  activeAccountId: string | null;
-};
+
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -215,6 +203,16 @@ export class MultiAccountStorage {
   // Vider tous les comptes
   static async clearAll(): Promise<void> {
     await AsyncStorage.removeItem(STORAGE_KEY);
+  }
+
+  // Sauvegarder le token du compte actif dans le stockage global
+  static async saveAuthToken(token: string): Promise<void> {
+    await AuthStorage.setToken(token);
+  }
+
+  // Supprimer le token du stockage global
+  static async clearAuthToken(): Promise<void> {
+    await AuthStorage.setToken('');
   }
 }
 

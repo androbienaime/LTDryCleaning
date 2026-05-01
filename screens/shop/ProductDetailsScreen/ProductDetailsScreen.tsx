@@ -22,6 +22,7 @@ import AddToCartButton from './components/AddToCartButton';
 
 // Styles
 import createStyles from './styles';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 
 type Props = NativeStackScreenProps<ShopStackParamList, 'ProductDetails'>;
 
@@ -119,11 +120,11 @@ const ProductDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                       <ProductDescription description={product.description} />
                       
                       {/* Informations de livraison */}
-                      <ShippingInfo 
+                      {/* <ShippingInfo 
                         address="Gonaive, Rue parc Vincent"
                         estimatedDeliveryStart="19/05/2025"
                         estimatedDeliveryEnd="23/05/2025"
-                      />
+                      /> */}
                     </ThemedView>
                   </Pressable>
                 </ThemedView>

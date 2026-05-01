@@ -18,11 +18,26 @@ export interface User {
     avatar?: string;
     account_cover?: string;
     account_profile?: string;
+    shop_id: string;
+    shop: Shop[]
     created_at: string;
     updated_at: string;
   }
   
-  
+  export interface Shop {
+    id: string;
+    name: string;
+    description?: string;
+    profile?: string;
+    cover_image?: string;
+    created_at: string;
+    updated_at: string;
+  }
+
+// ═══════════════════════════════════════════════════════════
+// PRODUITS
+// ═══════════════════════════════════════════════════════════
+ 
   export interface Product {
     id: number;
     name: string;
@@ -43,6 +58,13 @@ export interface User {
     updated_at: string;
   }
   
+  export type OfflineProduct = Product & {
+    localImages: string[]; // chemins FileSystem locaux après téléchargement
+    cachedAt: number;      // timestamp du dernier cache
+    coverImageLocal: string; // chemin local de l'image de couverture (prioritaire)
+  };
+
+
   export interface Category {
     id: number;
     name: string;
@@ -67,9 +89,13 @@ export interface User {
     Declination?: Declination
   }
   
+// ═══════════════════════════════════════════════════════════
+// COMMANDES
+// ═══════════════════════════════════════════════════════════
+ 
   export interface Order {
     id: number;
-    user_id: number;
+    account_id: number;
     items: OrderItem[];
     status: OrderStatus;
     shipping_address: Address;
@@ -79,15 +105,38 @@ export interface User {
     created_at: string;
     updated_at: string;
   }
+
+  
+// Commande créée hors ligne, en attente de synchronisation
+export type OfflineOrder={
+  localId: string;        // ID temporaire local
+  accountId: string;      // compte propriétaire
+  items: OrderItem[];
+  total: number;
+  address?: string;
+  note?: string;
+  status: 'pending_sync' | 'syncing' | 'synced' | 'failed';
+  createdAt: number;
+  syncAttempts: number;
+  serverId?: number;      // ID assigné par le serveur après sync réussie
+  syncError?: string;
+};
   
   export interface OrderItem {
     id: number;
     product_id: number;
     product: Product;
     quantity: number;
+    declination_id?: number;
     price: number;
     selected_attributes?: Record<string, string>;
   }
+
+  export type SyncQueueItem = {
+    localId: string;
+    accountId: string;
+    addedAt: number;
+  };
   
   export interface Currency{
     iso_code : string;
@@ -195,3 +244,38 @@ export interface LoginPayload {
   email: string;
   password: string;
 }
+
+// Offline 
+  
+  export interface OfflineOrderItem {
+    id: number;
+    product_id: number;
+    product: Product;
+    quantity: number;
+    price: number;
+    selected_attributes?: Record<string, string>;
+  }
+
+  export type SyncResult = {
+    synced: number;
+    failed: number;
+    errors: string[];
+  };
+  // 
+  export type SavedAccount = {
+  id: string;              // uuid local
+  user: AccountUser;
+  token: string;
+  refreshToken?: string;
+  pinHash: string | null;  // null = pas de PIN configuré
+  avatarColor: string;     // couleur générée automatiquement
+  addedAt: number;
+  lastUsedAt: number;
+  isActive: boolean;
+};
+
+export type MultiAccountStore = {
+  accounts: SavedAccount[];
+  activeAccountId: string | null;
+};
+

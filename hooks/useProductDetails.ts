@@ -2,15 +2,19 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Product, Declination } from '@/src/@types/models';
 import useDisabledAttributeValues from '@/hooks/useDisabledAttributeValues';
 import { useCart } from '@/hooks/useCart'; // Import the enhanced useCart hook instead
+import { useProducts } from '@/context/ProductContext';
 
 export default function useProductDetails(product: Product) {
     const [selectedDeclinations, setSelectedDeclinations] = useState<Record<string, string>>({});
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [quantity, setQuantity] = useState<number>(1);
     const [currentPrice, setCurrentPrice] = useState<number>(product.price);
-    const [currentImages, setCurrentImages] = useState<string[]>(product.images);
+    const [currentImages, setCurrentImages] = useState<string[]>(product.images ?? []);
     const [maxQuantity, setMaxQuantity] = useState<number>(product.stock_quantity);
     const { isProductInCart, addProductToCart } = useCart(); // Use addProductToCart from enhanced hook
+
+    const { isFromCache, apiStatus } = useProducts();
+    const isOnline = apiStatus === 'online' && !isFromCache ? true : false;
 
     // Organiser les attributs et valeurs des déclinaisons
     const organizedValues = useMemo(() => {
@@ -103,15 +107,29 @@ export default function useProductDetails(product: Product) {
             }
             // Mettre à jour les images si la déclinaison a des images spécifiques
             if (matchingDeclination.declination_images && matchingDeclination.declination_images.length > 0) {
-                setCurrentImages(matchingDeclination.declination_images);
+                if(isOnline){
+                    setCurrentImages(matchingDeclination.declination_images);
+
+                }else{
+                    setCurrentImages(product.localImages);
+                }
             } else {
                 // Revenir aux images par défaut du produit
-                setCurrentImages(product.images);
+                if(isOnline){
+                    setCurrentImages(product.images);
+                }else{                     
+                    setCurrentImages(product.localImages);
+                }
             }
         } else {
             // Si aucune déclinaison complète n'est sélectionnée, revenir aux valeurs par défaut
             setCurrentPrice(product.price);
-            setCurrentImages(product.images);
+            if(isOnline){
+                setCurrentImages(product.images);
+            }else{                     
+                setCurrentImages(product.localImages);
+            }            
+            
             setMaxQuantity(product.stock_quantity);
         }
     }, [findMatchingDeclination, product.price, product.images, product.stock_quantity]);
@@ -187,7 +205,7 @@ export default function useProductDetails(product: Product) {
         // Pour être cohérent avec l'implémentation du useCart
         const matchingDeclination = findMatchingDeclination as Declination | undefined;
         return isProductInCart(product.slug, matchingDeclination);
-    }, [product.id, findMatchingDeclination, isProductInCart]);
+    }, [product.slug, findMatchingDeclination, isProductInCart]);
 
     return {
         organizedValues,
