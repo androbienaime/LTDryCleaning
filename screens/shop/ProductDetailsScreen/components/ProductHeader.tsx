@@ -4,10 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors, useThemeTypography } from '@/theme';
 import { ThemedView } from '@/components/ThemedView';
 import { ThemedText } from '@/components/ThemedText';
+import { fontWeight } from '@/theme/typography';
 
 type ProductHeaderProps = {
   name: string;
   price: number;
+  productQuantity: number;
   discountPrice?: number;
   currencySymbol: string;
   onSharePress: () => void;
@@ -17,6 +19,7 @@ type ProductHeaderProps = {
 const ProductHeader: React.FC<ProductHeaderProps> = ({
   name,
   price,
+  productQuantity,
   discountPrice,
   currencySymbol,
   onSharePress,
@@ -83,7 +86,8 @@ const ProductHeader: React.FC<ProductHeaderProps> = ({
     },
     rating: {
       fontSize: 14,
-      color: colors.text.secondary
+      color: colors.text.secondary,
+      fontWeight: 'bold'
     }
   });
 
@@ -126,9 +130,12 @@ const ProductHeader: React.FC<ProductHeaderProps> = ({
           )}
         </View>
         
+        
         <View style={styles.ratingWrapper}>
-          <Ionicons name="star" size={20} color="#D4AF34" />
-          <ThemedText style={styles.rating}>3.5k pers. ont noté</ThemedText>
+          {/* <Ionicons name="star" size={20} color="#D4AF34" /> */}
+          <ThemedText style={styles.rating}>
+            Total : {currencySymbol}
+            {parseInt((price * productQuantity).toString()).toFixed(2)}</ThemedText>
         </View>
       </View>
     </ThemedView>

@@ -149,9 +149,17 @@ const CartItem = ({
           <View style={styles.detailsContainer}>
             <Text style={[styles.productName, typography.body1]}>{item.product.name}</Text>
             {renderSelectedAttributes()}
-            <Text style={[styles.priceText, typography.h3]}>
-              {currencySymbol} {itemPrice}
-            </Text>
+            <View style={styles.priceContainer}>
+              {/* left side price */}
+              <Text style={[styles.priceText, typography.h3]}>
+                {currencySymbol} {itemPrice}
+              </Text>
+
+              {/* right side total price * quantity */}
+              <Text style={[styles.priceText, typography.h6]}>
+                  ({currencySymbol} {totalPrice.toFixed(2)})
+                </Text> 
+            </View>
           </View>
 
           {/* Contrôles de quantité et suppression */}
@@ -251,6 +259,11 @@ StyleSheet.create({
     fontSize: 12,
     marginBottom: 2,
   },
+  priceContainer: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center', // optionnel (pour aligner verticalement)
+},
   priceText: {
     fontSize: 16,
     marginTop: 4,

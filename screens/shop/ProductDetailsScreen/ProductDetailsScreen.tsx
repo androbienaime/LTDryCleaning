@@ -94,6 +94,7 @@ const ProductDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                         discountPrice={product.discount_price}
                         currencySymbol={product.currency.symbol}
                         onSharePress={onSharePress}
+                        productQuantity={quantity}
                         onFavoritePress={onFavoritePress}
                       />
                       

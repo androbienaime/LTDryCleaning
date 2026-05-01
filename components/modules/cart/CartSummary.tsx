@@ -9,6 +9,7 @@ type Props = {
     handleCheckout : () => void;
 };
 
+
 const CartSummary = ({totalAmount, itemCount, handleCheckout} : Props) =>{
     const colors = useThemeColors();
     const typography = useThemeTypography();
