@@ -141,7 +141,13 @@ export const ProductProvider = ({
         } else if (searchQuery) {
           response = await productsService.searchProducts(searchQuery, params);
         } else {
-          response = await productsService.getProductsByShop(shopId, params);
+          try{
+            console.log("Fetching products with params : ", params);
+            response = await productsService.getProductsByShop(shopId, params);
+          
+          }catch(e){
+            console.log("ERREUR DE CHARGEMENT DE PROD : ", e);
+          }
         }
 
         // API répond → remettre le flag online
@@ -176,9 +182,10 @@ export const ProductProvider = ({
         // ✅ Afficher IMMÉDIATEMENT les données (sans images locales)
         const immediate: OfflineProduct[] = rawData.map((p) => ({
           ...p,
-          images:      Array.isArray(p.images) ? p.images : [],
-          localImages: [], // rempli en arrière-plan par cacheProducts
-          cachedAt:    Date.now(),
+          images:          Array.isArray(p.images) ? p.images : [],
+          localImages:     [], // rempli en arrière-plan par cacheProducts
+          coverImageLocal: '',
+          cachedAt:        Date.now(),
         }));
 
         if (refresh) {

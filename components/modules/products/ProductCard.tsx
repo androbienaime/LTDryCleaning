@@ -29,6 +29,7 @@ const ProductCard = ({ item, index }: Props) => {
     navigation.navigate("ProductDetails", {product: item});
   }
 
+  // console.log("ProductCard rendered for:", item);
   const sources = [
     item.coverImageLocal,
     item.coverImage,

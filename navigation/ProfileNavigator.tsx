@@ -27,6 +27,8 @@ const ProfileStackNavigator: React.FC = () => {
     >
       <ProfileStack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Mon Profil' }} />
       <ProfileStack.Screen name="AccountManagement" component={AccountManagementScreen} options={{ title: 'Gestion des comptes' }} />
+      <ProfileStack.Screen name="OrderHistory" component={OrderHistoryScreen} options={{ headerBackVisible: true }} />
+
       {/* <ProfileStack.Screen 
         name="OrderDetails" 
         component={OrderDetailsScreen} 

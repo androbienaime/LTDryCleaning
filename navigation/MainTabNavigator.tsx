@@ -30,13 +30,13 @@ const MainTabNavigator: React.FC = () => {
             case 'Categories':
               iconName = 'grid';
               break;
-            case 'Cart':
+            case 'CartStack':
               iconName = 'shopping-cart';
               break;
             case 'Chat':
               iconName = 'message-circle';
               break;
-            case 'Profile':
+            case 'ProfileStack':
               iconName = 'user';
               break;
           }
@@ -82,7 +82,7 @@ const MainTabNavigator: React.FC = () => {
       <MainTab.Screen name="Categories" component={CategoriesScreen} options={{ title: 'Catégories' }} />
       {/* <MainTab.Screen name="Chat" component={ChatScreen} options={{ title: 'Leki' }} /> */}
       <MainTab.Screen
-        name="Cart" 
+        name="CartStack" 
         component={CartStackNavigator} 
         options={{ 
           title: 'Panier', 
@@ -94,7 +94,7 @@ const MainTabNavigator: React.FC = () => {
           }
         }} 
         />
-      <MainTab.Screen name="Profile" component={ProfileStackNavigator} options={{ title: 'Profil' }} />
+      <MainTab.Screen name="ProfileStack" component={ProfileStackNavigator} options={{ title: 'Profil' }} />
     </MainTab.Navigator>
   );
 };

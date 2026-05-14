@@ -34,6 +34,7 @@ export type CartStackParamList = {
   OrderConfirmation: {
     orderId: string;
   };
+  OrderHistory: undefined;
 };
 
 // Paramètres pour la pile de navigation Profile
@@ -59,8 +60,8 @@ export type MainTabParamList = {
   Shop: NavigatorScreenParams<ShopStackParamList>;
   Categories: undefined;
   Chat: undefined;
-  Cart: NavigatorScreenParams<CartStackParamList>;
-  Profile: NavigatorScreenParams<ProfileStackParamList>;
+  CartStack: NavigatorScreenParams<CartStackParamList>;
+  ProfileStack: NavigatorScreenParams<ProfileStackParamList>;
 };
 
 // Paramètres pour la racine de navigation

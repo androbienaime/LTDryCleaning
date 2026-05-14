@@ -24,6 +24,7 @@ const CartStackNavigator: React.FC = () => {
         component={OrderConfirmationScreen} 
         options={{ title: 'Confirmation de commande' }} 
       />
+
     </CartStack.Navigator>
   );
 };

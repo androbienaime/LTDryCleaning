@@ -49,6 +49,13 @@ export interface CategoriesQueryParams {
   sort?: string;
   featured?: boolean;
 }
+export interface CustomersQueryParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  sort?: string;
+  featured?: boolean;
+}
 
 export interface CartResponse {
   items: CartItem[];

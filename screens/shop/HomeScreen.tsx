@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useThemeColors } from "@/theme";
@@ -12,7 +12,11 @@ import Header from "@/components/Header";
 import { FlatList } from "react-native";
 import { LoadingProvider } from "@/context/LoadingContext";
 import LoadingOverlay from "@/components/forms/LoadingOverlay";
-import { ProductProvider } from "@/context/ProductContext";
+import { ProductProvider, useProducts } from "@/context/ProductContext";
+import { useMultiAccount } from "@/context/MultiAccountContext";
+import { customersService } from "@/src/api/services/customers.services";
+import { Customer } from "@/src/@types/models";
+import { useAuth } from "@/context/AuthContext";
 
 //  export const resetStorage = async () => {
 //   await AsyncStorage.clear();
@@ -26,6 +30,9 @@ const HomeScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [globalLoading, setGlobalLoading] = useState(false);
+  const { hasPermission } = useAuth();
+  const { activeAccount }  = useMultiAccount();
+
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -45,7 +52,9 @@ const HomeScreen = () => {
   const hideGlobalLoading = useCallback(() => {
     setGlobalLoading(false);
   }, []);
-  
+
+  const shopId: string = activeAccount?.user?.shop?.[0]?.id ?? '';
+
   return (
     <LoadingProvider>
       <SafeAreaView style={{ backgroundColor: colors.background.primary, flex: 1 }}>
@@ -59,23 +68,42 @@ const HomeScreen = () => {
               refreshing={refreshing}
               onRefresh={onRefresh}
               renderItem={() => (
-                <View>
-                  {/* <ProductFeatured 
+
+                 /*   <View>
+                      <ProductFeatured 
                     refreshTrigger={refreshTrigger}
                     onLoadStart={showGlobalLoading}
                     onLoadEnd={hideGlobalLoading}
-                  /> */}
-                  <ProductList 
-                    refreshTrigger={refreshTrigger} 
-                    // onLoadStart={showGlobalLoading}
-                    // onLoadEnd={hideGlobalLoading}
-                    globalRefreshing={refreshing}
-                  />
+                  /> 
+                </View>
+                */
+
+                <View>
+                  {
+                    hasPermission(shopId, 'view_any_core::product') ? (
+                      <ProductList
+                        refreshTrigger={refreshTrigger}
+                        globalRefreshing={refreshing}
+                        // onLoadStart={showGlobalLoading}
+                        // onLoadEnd={hideGlobalLoading}
+                      />
+                    ) : (
+                      <Text
+                        style={{
+                          color: colors.text.primary,
+                          textAlign: 'center',
+                          marginTop: 20,
+                        }}
+                      >
+                        You don't have permission to view products.
+                      </Text>
+                    )
+                }
                 </View>
               )}
               ListHeaderComponent={() => (
                 <View>
-                   <HomeSlider style={{ marginLeft: 18 }} /> 
+                   {/* <HomeSlider style={{ marginLeft: 18 }} />  */}
                 </View>
               )}
               showsVerticalScrollIndicator={false}

@@ -1,15 +1,17 @@
 // context/AuthContext.tsx
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { useMultiAccount } from '@/context/MultiAccountContext';
-import { AccountUser, MultiAccountStorage, SavedAccount } from '@/utils/multiAccountStorage';
+import { MultiAccountStorage } from '@/utils/multiAccountStorage';
+import { extractPermissions } from '@/utils/jwt';
+import { AccountUser, SavedAccount } from '@/src/@types/models';
 import { authService } from '@/src/api/services/auth.service';
 import { storage } from '@/utils/storage';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type LoginOptions = {
-  saveAccount?: boolean; // sauvegarder dans le gestionnaire de comptes
-  pin?: string;          // PIN à associer au compte sauvegardé
+  saveAccount?: boolean;
+  pin?: string;
 };
 
 type AuthContextType = {
@@ -22,6 +24,14 @@ type AuthContextType = {
   logout: () => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   updateProfile: (userData: Partial<AccountUser>) => Promise<void>;
+  /**
+   * Vérifie si l'utilisateur a une permission dans un shop donné.
+   * Lit les permissions depuis le JWT (pas de requête DB).
+   *
+   * @example
+   * hasPermission(shop.id, 'product.create')
+   */
+  hasPermission: (shopId: string | number, permission: string) => boolean;
   clearError: () => void;
 };
 
@@ -37,6 +47,7 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
   forgotPassword: async () => {},
   updateProfile: async () => {},
+  hasPermission: () => false,
   clearError: () => {},
 });
 
@@ -47,68 +58,77 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { activeAccount, addAccount } = useMultiAccount();
 
-  // ✅ CORRECTION : renommé "AccountUser" → "user" pour éviter le conflit avec le type
   const [user, setUser] = useState<AccountUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Synchroniser avec le compte actif du gestionnaire multi-compte ──────────
+  // ── Sync avec le compte actif ──────────────────────────────────────────────
   useEffect(() => {
-    if (activeAccount) {
-      setUser(activeAccount.user);
-    } else {
-      setUser(null);
-    }
-    setIsLoading(false);
+    const syncAuth = async () => {
+      if (activeAccount) {
+        // Rehydrate les permissions depuis le token stocké
+        const permissions = extractPermissions(activeAccount.token);
+        setUser({ ...activeAccount.user, permissions });
+
+        await storage.setData('auth_token', activeAccount.token);
+        await storage.setData('refresh_token', activeAccount.refreshToken);
+      } else {
+        setUser(null);
+        await storage.removeData('auth_token');
+        await storage.removeData('refresh_token');
+      }
+
+      setIsLoading(false);
+    };
+
+    syncAuth();
   }, [activeAccount]);
 
-  // ── Login ─────────────────────────────────────────────────────────────────
+  // ── Login ──────────────────────────────────────────────────────────────────
 
   const login = async (
     email: string,
     password: string,
-    options: LoginOptions = { saveAccount: true }
+    options: LoginOptions = { saveAccount: true },
   ) => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // ✅ CORRECTION : alias "user: apiUser" pour éviter le conflit avec la variable d'état
-      const { user: apiUser, token, refresh_token } = await authService.login({
-        email,
-        password,
-      });
+      const { user: apiUser, token, refresh_token } = await authService.login({ email, password });
 
-      // Stocker les tokens (source de vérité pour l'interceptor HTTP)
+      // Extrait les permissions embarquées dans le JWT
+      const permissions = extractPermissions(token);
+      const userWithPermissions: AccountUser = { ...apiUser, permissions };
+
       await storage.setData('auth_token', token);
       await storage.setData('refresh_token', refresh_token);
 
       if (options.saveAccount !== false) {
-        // addAccount met à jour activeAccount → useEffect sync "user" automatiquement
+        // addAccount → activeAccount change → useEffect sync "user" automatiquement
         await addAccount({
-          user: apiUser,
+          user: userWithPermissions,
           token,
           refreshToken: refresh_token,
           pin: options.pin,
         });
       } else {
-        setUser(apiUser);
+        setUser(userWithPermissions);
       }
     } catch (e: any) {
       setError(e?.message ?? 'Échec de la connexion.');
-      console.error('Erreur lors du login :', e?.status);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ── Register ──────────────────────────────────────────────────────────────
+  // ── Register ───────────────────────────────────────────────────────────────
 
   const register = async (
     email: string,
     password: string,
     name: string,
-    options: LoginOptions = { saveAccount: true }
+    options: LoginOptions = { saveAccount: true },
   ) => {
     try {
       setIsLoading(true);
@@ -121,83 +141,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password_confirmation: password,
       });
 
+      const permissions = extractPermissions(token);
+      const userWithPermissions: AccountUser = { ...apiUser, permissions };
+
       await storage.setData('auth_token', token);
       await storage.setData('refresh_token', refresh_token);
 
       if (options.saveAccount !== false) {
         await addAccount({
-          user: apiUser,
+          user: userWithPermissions,
           token,
           refreshToken: refresh_token,
           pin: options.pin,
         });
       } else {
-        setUser(apiUser);
+        setUser(userWithPermissions);
       }
     } catch (e: any) {
-      setError(e?.message ?? "Échec de l'inscription. Veuillez réessayer.");
+      setError(e?.message ?? "Échec de l'inscription.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ── Logout ────────────────────────────────────────────────────────────────
-  // Logout NE supprime PAS le compte du gestionnaire multi-compte.
-  // Il désactive juste la session active → prochain lancement demande le PIN.
+  // ── Logout ─────────────────────────────────────────────────────────────────
+  // Ne supprime pas le compte du gestionnaire → prochain lancement demande le PIN.
 
   const logout = async () => {
     try {
       setIsLoading(true);
 
-      // Appel API optionnel pour invalider le token côté serveur :
+      // Invalide le token côté serveur (optionnel)
       // try { await authService.logout(); } catch {}
 
       await storage.removeData('auth_token');
       await storage.removeData('refresh_token');
 
-      // Désactiver le compte actif sans le supprimer du gestionnaire
       const store = await MultiAccountStorage.getStore();
       store.activeAccountId = null;
       store.accounts = store.accounts.map((a: SavedAccount) => ({ ...a, isActive: false }));
       await MultiAccountStorage.saveStore(store);
 
       setUser(null);
-    } catch (e) {
+    } catch {
       setError('Échec de la déconnexion.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ── Forgot password ───────────────────────────────────────────────────────
+  // ── Forgot password ────────────────────────────────────────────────────────
 
   const forgotPassword = async (email: string) => {
     try {
       setIsLoading(true);
       setError(null);
-      // await apiClient.post('/account/forgot-password', { email });
-      await new Promise((r) => setTimeout(r, 800));
+      // await authService.forgotPassword(email);
     } catch (e: any) {
-      setError(e?.message ?? "Échec de l'envoi de l'email de récupération.");
+      setError(e?.message ?? "Échec de l'envoi de l'email.");
       throw e;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ── Update profile ────────────────────────────────────────────────────────
+  // ── Update profile ─────────────────────────────────────────────────────────
 
   const updateProfile = async (userData: Partial<AccountUser>) => {
     try {
-      // ✅ CORRECTION : utilise "user" (variable d'état) et non "AccountUser" (type)
       if (!user) throw new Error('Non connecté');
       setIsLoading(true);
       setError(null);
 
-      // const updated = await apiClient.put<AccountUser>('/account/profile', userData);
       const updatedUser: AccountUser = { ...user, ...userData };
 
-      // Synchroniser avec le compte actif dans le gestionnaire multi-compte
       if (activeAccount) {
         await MultiAccountStorage.upsertAccount({
           user: updatedUser,
@@ -205,18 +222,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           refreshToken: activeAccount.refreshToken,
           existingAccountId: activeAccount.id,
         });
-        // Le useEffect sur activeAccount mettra "user" à jour automatiquement
+        // useEffect sur activeAccount mettra "user" à jour automatiquement
       } else {
         setUser(updatedUser);
       }
     } catch (e: any) {
-      setError(e?.message ?? 'Échec de la mise à jour du profil.');
+      setError(e?.message ?? 'Échec de la mise à jour.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  // ── hasPermission ──────────────────────────────────────────────────────────
+
+  const hasPermission = (shopId: string | number, permission: string): boolean => {
+    const perms = user?.permissions?.[String(shopId)] ?? [];
+    return perms.includes(permission);
+  };
+
   const clearError = () => setError(null);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <AuthContext.Provider
@@ -230,6 +256,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         forgotPassword,
         updateProfile,
+        hasPermission,
         clearError,
       }}
     >

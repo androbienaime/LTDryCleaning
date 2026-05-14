@@ -22,6 +22,9 @@ export interface User {
     shop: Shop[]
     created_at: string;
     updated_at: string;
+    permissions?: Record<string, string[]>;
+
+    // currency?: Currency
   }
   
   export interface Shop {
@@ -137,6 +140,69 @@ export type OfflineOrder={
     accountId: string;
     addedAt: number;
   };
+
+  // ═══════════════════════════════════════════════════════════
+// CUSTOMER (client de la commande)
+// ═══════════════════════════════════════════════════════════
+ 
+export interface Customer {
+  id?:          string | number;
+  firstname?:   string;           // optionnel
+  lastname?:    string;           // optionnel
+  name?:        string;           // nom complet (pour contacts téléphoniques)
+  middle_name?: string;           // optionnel
+  phone:        string;           // seul champ obligatoire
+  email?:       string;
+  address?:     string;
+  note?:        string;
+  savedToContacts?: boolean;
+  contactId?:   string;
+  createdAt?:   number;
+}
+ 
+export interface Currencies {
+  id: number;
+  iso_code: string;
+  symbol: string;
+  name: string;
+  country: string;
+  exchange_rate: number;
+}
+// ═══════════════════════════════════════════════════════════
+// COMMANDE COMPLÈTE (online + offline)
+// ═══════════════════════════════════════════════════════════
+ 
+export interface DeliveryOrderItem {
+  product_id:     number;
+  product_slug:   string;
+  product_name:   string;
+  price:          number;
+  quantity:       number;
+  declination_id?: number;
+  declination_sku?: string;
+}
+ 
+export interface DeliveryOrder {
+  customer:      Customer;
+  items:         DeliveryOrderItem[];
+  total:         number;
+  delivery_date: string;       // ISO date "2025-05-10"
+  delivery_time?: string;      // ex: "14:00"
+  note?:         string;
+  address?:      string;
+}
+ 
+// Commande hors ligne enrichie (remplace OfflineOrder basique)
+export type OfflineDeliveryOrder = DeliveryOrder & {
+  localId:      string;
+  accountId:    string;
+  status:       'pending_sync' | 'syncing' | 'synced' | 'failed';
+  createdAt:    number;
+  syncAttempts: number;
+  serverId?:    number;
+  syncError?:   string;
+};
+ 
   
   export interface Currency{
     iso_code : string;

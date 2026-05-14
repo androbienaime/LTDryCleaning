@@ -36,6 +36,9 @@ const ProfileScreen = () => {
     navigation.navigate("AccountManagement");
   };
 
+  const handleOrderHistory = () => {
+      navigation.navigate('OrderHistory')
+  };
   return (
     <LinearGradient
       colors={["#0f2027", "#203a43", "#2c5364"]}
@@ -55,6 +58,13 @@ const ProfileScreen = () => {
         subtitle="Nouveaux Rôles Disponibles"
         color={["#4facfe", "#00f2fe"]}
         icon={<MaterialIcons name="vpn-key" size={28} color="#fff" />}
+      />
+
+      <Card
+        title="ORDER HISTORY & ANALYTICS"
+        color={["#00c6ff", "#0072ff"]}
+        icon={<Ionicons name="settings" size={28} color="#fff" />}
+        onPress={handleOrderHistory}
       />
 
       <Card
