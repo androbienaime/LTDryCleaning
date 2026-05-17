@@ -5,10 +5,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCart } from '@/context/CartContext';
 import { useMultiAccount } from '@/context/MultiAccountContext';
 import { useProducts } from '@/context/ProductContext';
-import { ordersService, generateOrderReference, generateSecureKey, cartItemsToOrderProducts } from '@/src/api/services/orders.services';
+import {
+  ordersService,
+  generateOrderReference,
+  generateSecureKey,
+  cartItemsToOrderProducts,
+  itemSubTotal,
+} from '@/src/api/services/orders.services';
 import { customersService } from '@/src/api/services/customers.services';
+import { SyncService } from '@/src/api/services/sync.service';
+import { extractApiError } from '@/src/api/client';
 import { CustomerStorage, PhoneContacts } from '@/utils/customerStorage';
-import type { Customer, OfflineDeliveryOrder, CartItem } from '@/src/@types/models';
+import type { Customer, OfflineOrder, CartItem, Order } from '@/src/@types/models';
+
+// ─── Constantes ───────────────────────────────────────────────────────────────
 
 const OFFLINE_ORDERS_KEY = (accountId: string) =>
   `@offline_delivery_orders:${accountId}`;
@@ -16,6 +26,8 @@ const OFFLINE_ORDERS_KEY = (accountId: string) =>
 function generateLocalId(): string {
   return `order_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type CheckoutStep = 'customer' | 'date' | 'summary';
 
@@ -56,7 +68,7 @@ export type UseCheckoutReturn = {
 
   isPlacing:     boolean;
   placeOrder:    () => Promise<PlaceOrderResult>;
-  offlineOrders: OfflineDeliveryOrder[];
+  offlineOrders: OfflineOrder[];
   syncPending:   () => Promise<void>;
   isSyncing:     boolean;
 
@@ -64,21 +76,26 @@ export type UseCheckoutReturn = {
   errors:     Record<string, string>;
 };
 
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+
 export function useCheckout(): UseCheckoutReturn {
   const { cartItems, totalAmount, clearCart } = useCart();
   const { activeAccount }                     = useMultiAccount();
   const { apiStatus }                         = useProducts();
 
-  const accountId  = activeAccount?.id                                  ?? '';
-  const shopId     = activeAccount?.user?.shop?.[0]?.id                 ?? '';
-  const currencyId = activeAccount?.user?.shop?.[0]?.currency?.iso_code ?? 'HTG';
-  const apiOk      = apiStatus !== 'offline';
+  // accountId        → UUID local (clé AsyncStorage)
+  // backendAccountId → ID numérique du compte dans la BDD (envoyé à l'API)
+  const accountId        = activeAccount?.id             ?? '';
+  const backendAccountId = activeAccount?.user?.id       ?? null;
+  const shopId           = activeAccount?.user?.shop?.[0]?.id ?? '';
+  const currencyId       = 3; // activeAccount?.user?.shop?.[0]?.currency?.id ?? 3
+  const apiOk            = apiStatus !== 'offline';
 
   // ── Step ──────────────────────────────────────────────────────────────────
 
   const [step, setStep] = useState<CheckoutStep>('customer');
 
-  // ── Customer ──────────────────────────────────────────────────────────────
+  // ── Customers ─────────────────────────────────────────────────────────────
 
   const [customers,        setCustomers]        = useState<Customer[]>([]);
   const [phoneContacts,    setPhoneContacts]    = useState<Customer[]>([]);
@@ -118,11 +135,12 @@ export function useCheckout(): UseCheckoutReturn {
     let contactId: string | null = null;
     if (saveToPhone) {
       contactId = await PhoneContacts.saveToContacts({
-        name: newCustomer.name, phone: newCustomer.phone, email: newCustomer.email,
+        ...newCustomer as Customer,
+        firstname: newCustomer.firstname ?? newCustomer.name.split(' ')[0]          ?? '',
+        lastname:  newCustomer.lastname  ?? newCustomer.name.split(' ').slice(-1)[0] ?? '',
       });
     }
 
-    // Sauvegarder localement
     const saved = await CustomerStorage.save(accountId, {
       ...newCustomer as Customer,
       savedToContacts: saveToPhone && !!contactId,
@@ -143,7 +161,13 @@ export function useCheckout(): UseCheckoutReturn {
     if (!query.trim()) { setFilteredContacts(phoneContacts); return; }
     const q = query.toLowerCase();
     setFilteredContacts(
-      phoneContacts.filter((c) => c.name.toLowerCase().includes(q) || c.phone.includes(q))
+      phoneContacts.filter(
+        (c) =>
+          (c.name      ?? '').toLowerCase().includes(q) ||
+          (c.firstname ?? '').toLowerCase().includes(q) ||
+          (c.lastname  ?? '').toLowerCase().includes(q) ||
+          c.phone.includes(q)
+      )
     );
   }, [phoneContacts]);
 
@@ -164,13 +188,17 @@ export function useCheckout(): UseCheckoutReturn {
   const [isCalculating, setIsCalculating] = useState(false);
 
   const recalculate = useCallback(async () => {
-    if (!apiOk || cartItems.length === 0 || !shopId) {
-      setComputedTotal(totalAmount);
-      return;
-    }
+    if (cartItems.length === 0) { setComputedTotal(0); return; }
+
+    // Calcul local immédiat
+    const localTotal = cartItems.reduce((sum, item) => sum + itemSubTotal(item), 0);
+    setComputedTotal(localTotal);
+
+    // Recalcul serveur si online (peut inclure coupons, livraison, etc.)
+    if (!apiOk || !shopId) return;
     setIsCalculating(true);
     try {
-      const total = await ordersService.calculateTotal(shopId, {
+      const serverTotal = await ordersService.calculateTotal(shopId, {
         order_products: cartItems.map((item: CartItem) => ({
           product:        item.product.slug,
           quantity:       item.quantity,
@@ -178,71 +206,81 @@ export function useCheckout(): UseCheckoutReturn {
         })),
         currency_id: currencyId,
       });
-      setComputedTotal(total);
-    } catch {
-      setComputedTotal(totalAmount);
+      setComputedTotal(serverTotal);
+    } catch (e) {
+      console.warn('[useCheckout] calculateTotal échec, total local conservé', e);
     } finally {
       setIsCalculating(false);
     }
-  }, [apiOk, cartItems, totalAmount, currencyId, shopId]);
+  }, [apiOk, cartItems, currencyId, shopId]);
 
   useEffect(() => { recalculate(); }, [cartItems.length, apiOk]);
 
-  // ── Commandes hors ligne ───────────────────────────────────────────────────
+  // ── Commandes offline ──────────────────────────────────────────────────────
 
-  const [offlineOrders, setOfflineOrders] = useState<OfflineDeliveryOrder[]>([]);
+  const [offlineOrders, setOfflineOrders] = useState<OfflineOrder[]>([]);
   const [isPlacing,     setIsPlacing]     = useState(false);
   const [isSyncing,     setIsSyncing]     = useState(false);
 
-  useEffect(() => {
+  const reloadOfflineOrders = useCallback(async () => {
     if (!accountId) return;
-    AsyncStorage.getItem(OFFLINE_ORDERS_KEY(accountId))
-      .then((raw) => setOfflineOrders(raw ? JSON.parse(raw) : []))
-      .catch(() => setOfflineOrders([]));
+    try {
+      const raw = await AsyncStorage.getItem(OFFLINE_ORDERS_KEY(accountId));
+      setOfflineOrders(raw ? JSON.parse(raw) : []);
+    } catch {
+      setOfflineOrders([]);
+    }
   }, [accountId]);
 
-  const persist = async (orders: OfflineDeliveryOrder[]) => {
-    await AsyncStorage.setItem(OFFLINE_ORDERS_KEY(accountId), JSON.stringify(orders));
-    setOfflineOrders(orders);
-  };
-
-  const updateOffline = async (localId: string, patch: Partial<OfflineDeliveryOrder>) => {
-    const updated = offlineOrders.map((o) => o.localId === localId ? { ...o, ...patch } : o);
-    await persist(updated);
-  };
+  useEffect(() => { reloadOfflineOrders(); }, [reloadOfflineOrders]);
 
   // ── Passer la commande ─────────────────────────────────────────────────────
 
   const placeOrder = async (): Promise<PlaceOrderResult> => {
     if (!canProceed) {
-      return { success: false, isOffline: false, message: 'Veuillez sélectionner un client.' };
+      return {
+        success:   false,
+        isOffline: false,
+        message:   'Veuillez sélectionner un client et ajouter des produits.',
+      };
     }
 
     setIsPlacing(true);
 
-    try {
+    // ── Mode online ────────────────────────────────────────────────────────
+    if (apiOk && shopId) {
 
-      if (apiOk && shopId) {
-        // ── 1. S'assurer que le customer existe dans le backend ──────────
-        // findOrCreate cherche par téléphone, crée si absent.
-        // Retourne un Customer avec un vrai ID numérique backend.
-        let page=10, initialLimit=50;
+      // Posé dès que createOrder réussit.
+      // Si non-null → on retourne success online même si clearCart échoue après.
+      let onlineOrderId: number | string | null = null;
 
-        const params = { page, per_page: initialLimit };
-        
-          const backendCustomer = await customersService.findOrCreate(
-            shopId,
-            selectedCustomer!
+      try {
+        // 1. Résoudre le customer (cherche par téléphone, crée si absent)
+        const backendCustomer = await customersService.findOrCreate(
+          shopId,
+          selectedCustomer!
+        );
+
+        if (!backendCustomer?.id) {
+          throw new Error('Impossible de résoudre le client (ID manquant)');
+        }
+
+        // Synchroniser l'ID backend localement (non bloquant)
+        CustomerStorage.save(accountId, {
+          ...selectedCustomer!,
+          id: backendCustomer.id,
+        }).then((savedLocal) => {
+          setSelectedCustomer(savedLocal);
+          setCustomers((prev) =>
+            prev.map((c) => (c.phone === savedLocal.phone ? savedLocal : c))
           );
-        
-        
-          console.log('Backend customer resolved:', backendCustomer);
+        }).catch(() => {});
 
-        // ── 2. Créer la commande avec le vrai customer_id ────────────────
-        const created = await ordersService.createOrder(shopId, {
-          customer_id:        Number(backendCustomer.id),
-          currency_id:        currencyId,
-          account_id:         accountId,
+        // 2. Construire et envoyer la commande
+        const orderPayload: Order = {
+          customer:           Number(backendCustomer.id),
+          currency:           currencyId,
+          account:            backendAccountId,
           order_amount:       computedTotal,
           total_amount_order: computedTotal,
           reference_order:    generateOrderReference(),
@@ -251,105 +289,100 @@ export function useCheckout(): UseCheckoutReturn {
           balance:            0,
           total_discount:     0,
           order_products:     cartItemsToOrderProducts(cartItems),
-        });
+        };
 
-        await clearCart();
-        setIsPlacing(false);
-        return { success: true, isOffline: false, orderId: created.id, message: 'Commande passée avec succès !' };
+        const created = await ordersService.createOrder(shopId, orderPayload);
+
+        // ✅ Commande confirmée — verrouille le succès
+        onlineOrderId = created.id ?? null;
+
+      } catch (e: any) {
+        const apiError = extractApiError(e);
+        console.warn('[useCheckout] Erreur création commande :');
+        console.warn('  message :', apiError.message);
+        console.warn('  errors  :', JSON.stringify(apiError.errors, null, 2));
+        console.warn('  status  :', apiError.status);
+        console.warn('  raw     :', JSON.stringify(apiError.raw, null, 2));
       }
-    } catch (e: any) {
-      console.warn('[useCheckout] API error → fallback offline:', e?.message);
+
+      // Commande créée en ligne → succès garanti
+      if (onlineOrderId !== null) {
+        try { await clearCart(); } catch (e) {
+          console.warn('[useCheckout] clearCart échoué (commande déjà créée) :', e);
+        }
+        setIsPlacing(false);
+        return {
+          success:   true,
+          isOffline: false,
+          orderId:   onlineOrderId,
+          message:   'Commande passée avec succès !',
+        };
+      }
+
+      // onlineOrderId === null → erreur avant/pendant createOrder → fallback offline
     }
 
-    // ── Hors ligne ou erreur API → sauvegarder localement ─────────────────
-    const offline: OfflineDeliveryOrder = {
-      customer:      selectedCustomer!,
-      items:         cartItems.map((item: CartItem) => ({
-        product_id:      item.product.id,
-        product_slug:    item.product.slug,
-        product_name:    item.product.name,
-        price:           item.product.discount_price ?? item.product.price,
-        quantity:        item.quantity,
-        declination_id:  item.Declination?.id,
-        declination_sku: item.Declination?.sku,
-      })),
-      total:         computedTotal,
-      delivery_date: deliveryDate.toISOString().split('T')[0],
-      delivery_time: deliveryTime,
-      note,
-      localId:       generateLocalId(),
-      accountId,
-      status:        'pending_sync',
-      createdAt:     Date.now(),
-      syncAttempts:  0,
+    // ── Mode offline (pas de réseau OU erreur API avant création) ──────────
+    // Même shape que Order + metadata + _customer pour findOrCreate à la sync
+    const offline: OfflineOrder = {
+      // Champs Order — identiques au payload online
+      currency:           currencyId,
+      account:            backendAccountId, // ID numérique backend (pas l'UUID local)
+      order_amount:       computedTotal,
+      total_amount_order: computedTotal,
+      reference_order:    generateOrderReference(),
+      secure_key:         generateSecureKey(),
+      has_delivery:       false,
+      balance:            0,
+      total_discount:     0,
+      order_products:     cartItemsToOrderProducts(cartItems),
+      // Metadata offline
+      _customer:          selectedCustomer!,
+      localId:            generateLocalId(),
+      status:             'pending_sync',
+      createdAt:          Date.now(),
+      syncAttempts:       0,
     };
 
-    await persist([...offlineOrders, offline]);
-    await clearCart();
+    const existing = await AsyncStorage.getItem(OFFLINE_ORDERS_KEY(accountId))
+      .then((r) => (r ? JSON.parse(r) : []))
+      .catch(() => []);
+
+    const newList = [...existing, offline];
+    await AsyncStorage.setItem(OFFLINE_ORDERS_KEY(accountId), JSON.stringify(newList));
+    setOfflineOrders(newList);
+
+    try { await clearCart(); } catch {}
     setIsPlacing(false);
 
-    return { success: true, isOffline: true, orderId: offline.localId, message: 'Commande enregistrée — sera envoyée à la reconnexion.' };
+    return {
+      success:   true,
+      isOffline: true,
+      orderId:   offline.localId,
+      message:   'Commande enregistrée — sera envoyée à la reconnexion.',
+    };
   };
 
-  // ── Sync ──────────────────────────────────────────────────────────────────
+  // ── Sync manuelle ──────────────────────────────────────────────────────────
+  // La sync automatique (NetInfo) est gérée par SyncService.startListening()
+  // → à appeler UNE SEULE FOIS dans App.tsx
 
-  const syncPending = async () => {
-    if (isSyncing || !apiOk || !shopId) return;
+  const syncPending = async (): Promise<void> => {
+    if (isSyncing) return;
     setIsSyncing(true);
-
-    const pending = offlineOrders.filter(
-      (o) => o.status === 'pending_sync' || o.status === 'failed'
-    );
-
-    for (const order of pending) {
-      await updateOffline(order.localId, { status: 'syncing' });
-      try {
-        // Résoudre le vrai customer_id
-        const backendCustomer = await customersService.findOrCreate(shopId, order.customer);
-
-        const created = await ordersService.createOrder(shopId, {
-          customer_id:        Number(backendCustomer.id),
-          currency_id:        currencyId,
-          account_id:         order.accountId || null,
-          order_amount:       order.total,
-          total_amount_order: order.total,
-          reference_order:    generateOrderReference(),
-          secure_key:         generateSecureKey(),
-          has_delivery:       false,
-          balance:            0,
-          total_discount:     0,
-          order_products:     order.items.map((i) => ({
-            id:          i.product_id,
-            quantity:    i.quantity,
-            declination: i.declination_id ?? null,
-            delivery:    null,
-            discount:    0,
-          })),
-        });
-
-        await updateOffline(order.localId, { status: 'synced', serverId: created.id });
-      } catch (e: any) {
-        const attempts = order.syncAttempts + 1;
-        await updateOffline(order.localId, {
-          status:       attempts >= 5 ? 'failed' : 'pending_sync',
-          syncAttempts: attempts,
-          syncError:    e?.message,
-        });
-      }
+    try {
+      await SyncService.syncAll();
+      await reloadOfflineOrders(); // rafraîchit l'UI avec les statuts mis à jour
+    } finally {
+      setIsSyncing(false);
     }
-
-    setIsSyncing(false);
   };
 
-  useEffect(() => {
-    if (apiOk && offlineOrders.some((o) => o.status === 'pending_sync')) {
-      syncPending();
-    }
-  }, [apiOk]); // eslint-disable-line
+  // ── Validation ────────────────────────────────────────────────────────────
 
   const canProceed =
-    !!selectedCustomer?.name &&
     !!selectedCustomer?.phone &&
+    !!(selectedCustomer?.name ?? selectedCustomer?.firstname) &&
     cartItems.length > 0;
 
   return {

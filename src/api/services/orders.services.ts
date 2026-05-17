@@ -1,4 +1,4 @@
-// src/api/services/orders_service.ts
+// src/api/services/orders_services.ts
 
 import apiClient from '@/src/api/client';
 import type { ApiResponse, Order, CartItem } from '@/src/@types/models';
@@ -6,11 +6,11 @@ import type { ApiResponse, Order, CartItem } from '@/src/@types/models';
 // ─── Helpers URL ──────────────────────────────────────────────────────────────
 
 const url = {
-  orders:    (shopId: string)                  => `/shops/${shopId}/orders`,
-  order:     (shopId: string, id: number)      => `/shops/${shopId}/orders/${id}`,
-  state:     (shopId: string, id: number)      => `/shops/${shopId}/orders/${id}/state`,
-  subTotal:  (shopId: string)                  => `/shops/${shopId}/orders/calculate-sub-total`,
-  total:     (shopId: string)                  => `/shops/${shopId}/orders/calculate-total`,
+  orders:   (shopId: string)             => `/shops/${shopId}/orders`,
+  order:    (shopId: string, id: number) => `/shops/${shopId}/orders/${id}`,
+  state:    (shopId: string, id: number) => `/shops/${shopId}/orders/${id}/state`,
+  subTotal: (shopId: string)             => `/shops/${shopId}/orders/calculate-sub-total`,
+  total:    (shopId: string)             => `/shops/${shopId}/orders/calculate-total`,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -27,12 +27,29 @@ export function generateSecureKey(): string {
   ).join('');
 }
 
-// Convertit les CartItem en order_products attendu par le backend
+/**
+ * Calcule le sous-total d'un CartItem côté client.
+ * Priorité : prix déclinaison > prix remisé > prix de base.
+ */
+export function itemSubTotal(item: CartItem): number {
+  const unitPrice =
+    item.Declination?.price ??
+    item.product.discount_price ??
+    item.product.price ??
+    0;
+  return unitPrice * item.quantity;
+}
+
+/**
+ * Convertit les CartItem en order_products attendu par OrderRequest.php.
+ * Inclut sub_totals (requis|numeric|min:0 dans la validation Laravel).
+ */
 export function cartItemsToOrderProducts(cartItems: CartItem[]) {
   return cartItems.map((item) => ({
     id:          item.product.id,
     quantity:    item.quantity,
-    declination: item.Declination?.id   ?? null,
+    sub_totals:  itemSubTotal(item),
+    declination: item.Declination?.id ?? null,
     delivery:    null,
     discount:    0,
   }));
@@ -42,72 +59,38 @@ export function cartItemsToOrderProducts(cartItems: CartItem[]) {
 
 export const ordersService = {
 
-  // GET /shops/{shop}/orders
   async getOrders(shopId: string): Promise<Order[]> {
     const raw = await apiClient.get<ApiResponse<Order[]>>(url.orders(shopId));
     return raw.data ?? [];
   },
 
-  // GET /shops/{shop}/orders/{order}
   async getOrder(shopId: string, orderId: number): Promise<Order> {
     const raw = await apiClient.get<ApiResponse<Order>>(url.order(shopId, orderId));
     if (!raw.data) throw new Error('Commande introuvable');
     return raw.data;
   },
 
-  // POST /shops/{shop}/orders
-  // Utilise Order comme base — les champs correspondent au OrderRequest Laravel
-  async createOrder(shopId: string, order: {
-    customer_id:        number;   // vrai ID backend du customer
-    currency_id:        string;
-    account_id?:        string | null;
-    order_amount:       number;
-    total_amount_order: number;
-    reference_order:    string;
-    secure_key:         string;
-    has_delivery:       boolean;
-    balance?:           number;
-    total_discount?:    number;
-    order_products:     ReturnType<typeof cartItemsToOrderProducts>;
-  }): Promise<Order> {
-    const raw = await apiClient.post<ApiResponse<Order>>(url.orders(shopId), {
-      customer:           order.customer_id,
-      currency:           order.currency_id,
-      account:            order.account_id ?? null,
-      order_amount:       order.order_amount,
-      total_amount_order: order.total_amount_order,
-      reference_order:    order.reference_order,
-      secure_key:         order.secure_key,
-      has_delivery:       order.has_delivery,
-      balance:            order.balance           ?? 0,
-      total_discount:     order.total_discount    ?? 0,
-      order_products:     order.order_products,
-    });
+  async createOrder(shopId: string, order: Order): Promise<Order> {
+    const raw = await apiClient.post<ApiResponse<Order>>(url.orders(shopId), order);
     if (!raw.data) throw new Error(raw.message ?? 'Erreur création commande');
     return raw.data;
   },
 
-  // PUT /shops/{shop}/orders/{order}
   async updateOrder(shopId: string, orderId: number, data: Partial<Order>): Promise<Order> {
     const raw = await apiClient.put<ApiResponse<Order>>(url.order(shopId, orderId), data);
     if (!raw.data) throw new Error(raw.message ?? 'Erreur mise à jour commande');
     return raw.data;
   },
 
-  // DELETE /shops/{shop}/orders/{order}
   async deleteOrder(shopId: string, orderId: number): Promise<void> {
     await apiClient.delete(url.order(shopId, orderId));
   },
 
-  // GET /shops/{shop}/orders/{order}/state
   async getAvailableStates(shopId: string, orderId: number): Promise<Record<string, string>> {
-    const raw = await apiClient.get<ApiResponse<Record<string, string>>>(
-      url.state(shopId, orderId)
-    );
+    const raw = await apiClient.get<ApiResponse<Record<string, string>>>(url.state(shopId, orderId));
     return raw.data ?? {};
   },
 
-  // POST /shops/{shop}/orders/{order}/state
   async changeState(
     shopId:   string,
     orderId:  number,
@@ -122,10 +105,9 @@ export const ordersService = {
     return raw.data;
   },
 
-  // POST /shops/{shop}/orders/calculate-sub-total
   async calculateSubTotal(shopId: string, data: {
-    product:         string; // slug
-    currency_id:     string;
+    product:         string;
+    currency_id:     string | number;
     quantity:        number;
     delivery_id?:    number | null;
     declination_id?: number | null;
@@ -134,10 +116,9 @@ export const ordersService = {
     return raw.data ?? 0;
   },
 
-  // POST /shops/{shop}/orders/calculate-total
   async calculateTotal(shopId: string, data: {
     order_products: { product: string; quantity: number; delivery_id?: number | null; declination_id?: number | null; discount?: number }[];
-    currency_id:    string;
+    currency_id:    string | number;
     coupon?:        string;
   }): Promise<number> {
     const raw = await apiClient.post<ApiResponse<number>>(url.total(shopId), data);

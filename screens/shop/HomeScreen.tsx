@@ -27,6 +27,7 @@ const HomeScreen = () => {
 //  resetStorage(); // 🔥 Supprimer ou commenter après test
   const colors = useThemeColors();
 
+  // t
   const [refreshing, setRefreshing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [globalLoading, setGlobalLoading] = useState(false);

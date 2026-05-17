@@ -96,37 +96,94 @@ export interface User {
 // COMMANDES
 // ═══════════════════════════════════════════════════════════
  
-  export interface Order {
-    id: number;
-    account_id: number;
-    items: OrderItem[];
-    status: OrderStatus;
-    shipping_address: Address;
-    billing_address: Address;
-    payment_method: PaymentMethod;
-    total_amount: number;
-    created_at: string;
-    updated_at: string;
-  }
+ export interface OrderItem {
+  id: number | string;
+
+  // Product
+  product_id: number;
+  quantity: number;
+
+  // Backend fields
+  sub_totals: number;
+  discount?: number;
+
+  // Optional relations
+  declination?: number | null;
+  delivery?: number | null;
+}
+
+export function itemSubTotal(item: CartItem): number {
+  const unitPrice =
+    item.Declination?.price ??
+    item.product.discount_price ??
+    item.product.price ??
+    0;
+  return unitPrice * item.quantity;
+}
+
+export function cartItemsToOrderProducts(cartItems: CartItem[]) {
+  return cartItems.map((item) => ({
+    id:          item.product.id,
+    quantity:    item.quantity,
+    sub_totals:  itemSubTotal(item),
+    declination: item.Declination?.id ?? null,
+    delivery:    null,
+    discount:    0,
+  }));
+}
+
+export interface Order {
+  id?: number | string;
+
+  // Relations
+  customer?: number;
+  currency: number;
+  account?: number | null;
+  merchant?: number | null;
+  coupon?: number | null;
+  delivery?: number | null;
+
+  // Products
+  order_products: ReturnType <typeof cartItemsToOrderProducts>;
+
+  // Amounts
+  order_amount?: number;
+  total_amount_order: number;
+  balance?: number;
+  total_discount?: number;
+
+  // Order info
+  reference_order: string;
+  secure_key: string;
+  has_delivery: boolean;
+
+  // Optional frontend fields
+  status?: OrderStatus;
+  shipping_address?: Address;
+  billing_address?: Address;
+  payment_method?: PaymentMethod;
+
+  // Dates
+  created_at?: string;
+  updated_at?: string;
+}
 
   
 // Commande créée hors ligne, en attente de synchronisation
-export type OfflineOrder={
-  localId: string;        // ID temporaire local
-  accountId: string;      // compte propriétaire
-  items: OrderItem[];
-  total: number;
-  address?: string;
-  note?: string;
-  status: 'pending_sync' | 'syncing' | 'synced' | 'failed';
-  createdAt: number;
+// Même shape que Order (online) + metadata + _customer pour findOrCreate à la sync.
+export type OfflineOrder = Omit<Order, 'status'> & {
+  _customer:    Customer;          // raw Customer → findOrCreate au moment de la sync
+  localId:      string;            // ID temporaire local (AsyncStorage)
+  status:       'pending_sync' | 'syncing' | 'synced' | 'failed';
+  createdAt:    number;
   syncAttempts: number;
-  serverId?: number;      // ID assigné par le serveur après sync réussie
-  syncError?: string;
+  serverId?:    number;            // ID assigné par le serveur après sync réussie
+  syncError?:   string;
 };
   
+
   export interface OrderItem {
-    id: number;
+    id: number | string;
     product_id: number;
     product: Product;
     quantity: number;
@@ -146,7 +203,7 @@ export type OfflineOrder={
 // ═══════════════════════════════════════════════════════════
  
 export interface Customer {
-  id?:          string | number;
+  id:          string | number;
   firstname?:   string;           // optionnel
   lastname?:    string;           // optionnel
   name?:        string;           // nom complet (pour contacts téléphoniques)
@@ -344,4 +401,3 @@ export type MultiAccountStore = {
   accounts: SavedAccount[];
   activeAccountId: string | null;
 };
-

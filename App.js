@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppRegistry, View, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import MultiAccountProvider, { useMultiAccount } from './context/MultiAccountCon
 import PinEntryScreen from './screens/PinEntryScreen';
 import LoginScreen from './screens/auth/LoginScreen'; // ← import direct
 import OfflineProvider from './context/OfflineContext';
+
 
 enableScreens();
 
@@ -108,6 +109,15 @@ const AppGate = () => {
   // 'pin' | 'password' | 'unlocked'
   const [gateState, setGateState] = useState('pin');
 
+  const { SyncService } = require('./src/api/services/sync.service');
+
+  useEffect(() => {
+    SyncService.startListening((result) => {
+      console.log(`Sync terminée : ${result.synced} ok, ${result.failed} échec`);
+    });
+    return () => SyncService.stopListening();
+  }, []);
+
   // ── Chargement initial ────────────────────────────────────────────────────
   if (isLoading) {
     return (
@@ -163,6 +173,8 @@ const AppGate = () => {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
+
+
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />

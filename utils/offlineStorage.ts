@@ -1,31 +1,25 @@
 // utils/offlineStorage.ts
 // Stockage hors ligne des produits (+ images) et des commandes, par compte.
 // Dépend de : expo-file-system, @react-native-async-storage/async-storage
-// Tous les types viennent de models.ts.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
-import type {
-  OfflineProduct,
-  OfflineOrder,
-  OrderItem,
-  SyncQueueItem,
-} from '@/src/@types/models';
+import type { OfflineProduct, OfflineOrder, SyncQueueItem } from '@/src/@types/models';
 
-// Re-exporte les types pour les imports existants
-export type { OfflineProduct, OfflineOrder, OrderItem as OfflineOrderItem, SyncQueueItem, };
+export type { OfflineProduct, OfflineOrder, SyncQueueItem };
 
-// ─── Clés AsyncStorage ───────────────────────────────────────────────────────
+// ─── Clés AsyncStorage ────────────────────────────────────────────────────────
 
 const KEYS = {
-  products:  (id: string) => `@offline:products:${id}`,
-  orders:    (id: string) => `@offline:orders:${id}`,
+  products:  (accountId: string) => `@offline:products:${accountId}`,
+  // Même clé que useCheckout — un seul store partagé
+  orders:    (accountId: string) => `@offline_delivery_orders:${accountId}`,
   syncQueue: '@offline:sync_queue',
 };
 
 const IMAGES_DIR = `${FileSystem.documentDirectory}offline_images/`;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers internes ─────────────────────────────────────────────────────────
 
 async function ensureImagesDir(): Promise<void> {
   const info = await FileSystem.getInfoAsync(IMAGES_DIR);
@@ -37,19 +31,15 @@ async function ensureImagesDir(): Promise<void> {
 function safeFilename(url: string, accountId: string): string {
   const parts = url.split('/');
   const raw = parts[parts.length - 1].split('?')[0] || `img_${Date.now()}.jpg`;
-  // Préfixer par accountId pour isoler les images par compte
   return `${accountId}_${raw}`;
 }
 
-function generateLocalId(): string {
-  return `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-// ─── Produits ─────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// PRODUITS
+// ═══════════════════════════════════════════════════════════
 
 export const ProductOfflineStorage = {
 
-  // Lire tous les produits cachés pour un compte
   async getProducts(accountId: string): Promise<OfflineProduct[]> {
     try {
       const raw = await AsyncStorage.getItem(KEYS.products(accountId));
@@ -62,108 +52,78 @@ export const ProductOfflineStorage = {
   async hasAnyProductFast(): Promise<boolean> {
     try {
       const keys = await AsyncStorage.getAllKeys();
-      return keys.some(key => key.startsWith('products_'));
+      return keys.some((key) => key.startsWith('@offline:products:'));
     } catch {
       return false;
     }
   },
 
- async saveProducts(accountId: string, rawProducts: any[]): Promise<OfflineProduct[]> {
-  await ensureImagesDir();
+  async saveProducts(accountId: string, rawProducts: any[]): Promise<OfflineProduct[]> {
+    await ensureImagesDir();
 
-  const saved: OfflineProduct[] = await Promise.all(
-    rawProducts.map(async (p) => {
+    const saved: OfflineProduct[] = await Promise.all(
+      rawProducts.map(async (p) => {
+        const images: string[] = (Array.isArray(p.images) ? p.images : [])
+          .map((img: any) => (typeof img === 'string' ? img : img?.url ?? ''))
+          .filter(Boolean);
 
-      // ─────────────────────────────────────────────
-      // 1. NORMALISER LES IMAGES
-      // ─────────────────────────────────────────────
-      const images: string[] = (Array.isArray(p.images) ? p.images : [])
-        .map((img: any) => (typeof img === 'string' ? img : img?.url ?? ''))
-        .filter(Boolean);
+        if (p.coverImage && !images.includes(p.coverImage)) {
+          images.unshift(p.coverImage);
+        }
 
-      // Inclure coverImage dans la liste si existe
-      if (p.coverImage && !images.includes(p.coverImage)) {
-        images.unshift(p.coverImage);
-      }
+        const localImagesMap: Record<string, string> = {};
 
-      // ─────────────────────────────────────────────
-      // 2. TELECHARGER TOUTES LES IMAGES
-      // ─────────────────────────────────────────────
-      const localImagesMap: Record<string, string> = {};
-
-      await Promise.all(
-        images.map(async (url) => {
-          try {
-            const localPath = `${IMAGES_DIR}${safeFilename(url, accountId)}`;
-            const info = await FileSystem.getInfoAsync(localPath);
-
-            if (info.exists) {
-              localImagesMap[url] = localPath;
-              return;
+        await Promise.all(
+          images.map(async (url) => {
+            try {
+              const localPath = `${IMAGES_DIR}${safeFilename(url, accountId)}`;
+              const info = await FileSystem.getInfoAsync(localPath);
+              if (info.exists) {
+                localImagesMap[url] = localPath;
+                return;
+              }
+              const result = await FileSystem.downloadAsync(url, localPath);
+              localImagesMap[url] = result.uri;
+            } catch {
+              localImagesMap[url] = url;
             }
+          })
+        );
 
-            const result = await FileSystem.downloadAsync(url, localPath);
-            localImagesMap[url] = result.uri;
+        const localImages = images.map((url) => localImagesMap[url]).filter(Boolean);
+        const coverImageLocal = p.coverImage
+          ? localImagesMap[p.coverImage] ?? p.coverImage
+          : localImages[0];
 
-          } catch {
-            localImagesMap[url] = url; // fallback remote
-          }
-        })
-      );
+        return {
+          id:                  p.id,
+          slug:                p.slug ?? '',
+          name:                p.name ?? '',
+          description:         p.description ?? '',
+          price:               Number(p.price ?? 0),
+          images,
+          localImages,
+          coverImage:          p.coverImage ?? '',
+          coverImageLocal,
+          category_id:         p.category_id,
+          in_stock:            p.in_stock,
+          currency:            p.currency,
+          declination:         p.declination ?? [],
+          has_unlimited_stock: p.has_unlimited_stock ?? false,
+          stock_quantity:      p.stock_quantity ?? 0,
+          category:            p.category ?? [],
+          created_at:          p.created_at ?? null,
+          updated_at:          p.updated_at ?? null,
+          cachedAt:            Date.now(),
+        } satisfies OfflineProduct;
+      })
+    );
 
-      // ─────────────────────────────────────────────
-      // 3. CONSTRUIRE LES TABLEAUX
-      // ─────────────────────────────────────────────
-      const localImages = images
-        .map((url) => localImagesMap[url])
-        .filter(Boolean);
+    await AsyncStorage.setItem(KEYS.products(accountId), JSON.stringify(saved));
+    console.log(`[OfflineStorage] ${saved.length} produits sauvegardés (compte: ${accountId})`);
+    return saved;
+  },
 
-      // coverImage LOCAL prioritaire
-      const coverImageLocal = p.coverImage
-        ? localImagesMap[p.coverImage] ?? p.coverImage
-        : localImages[0];
-
-      // ─────────────────────────────────────────────
-      // 4. RETURN FINAL
-      // ─────────────────────────────────────────────
-      return {
-        id: p.id,
-        slug: p.slug ?? '',
-        name: p.name ?? '',
-        description: p.description ?? '',
-        price: Number(p.price ?? 0),
-
-        // 🔥 IMPORTANT
-        images, // remote
-        localImages, // local cache
-
-        coverImage: p.coverImage ?? '',
-        coverImageLocal, // ✅ NEW (clé critique)
-
-        category_id: p.category_id,
-        in_stock: p.in_stock,
-        currency: p.currency,
-        declination: p.declination ?? [],
-        has_unlimited_stock: p.has_unlimited_stock ?? false,
-        stock_quantity: p.stock_quantity ?? 0,
-        category: p.category ?? [],
-
-        created_at: p.created_at ?? null,
-        updated_at: p.updated_at ?? null,
-
-        cachedAt: Date.now(),
-      } satisfies OfflineProduct;
-    })
-  );
-
-  await AsyncStorage.setItem(KEYS.products(accountId), JSON.stringify(saved));
-
-  console.log(`[OfflineStorage] ${saved.length} produits sauvegardés (compte: ${accountId})`);
-
-  return saved;
-},
-
-  // Supprimer le cache produits + images locales d'un compte
   async clearProducts(accountId: string): Promise<void> {
     const products = await this.getProducts(accountId);
     await Promise.all(
@@ -177,10 +137,8 @@ export const ProductOfflineStorage = {
       )
     );
     await AsyncStorage.removeItem(KEYS.products(accountId));
-    console.log(`[OfflineStorage] Cache produits supprimé (compte: ${accountId})`);
   },
 
-  // Âge du cache en minutes, ou null si vide
   async getCacheAgeMinutes(accountId: string): Promise<number | null> {
     const products = await this.getProducts(accountId);
     if (!products.length) return null;
@@ -189,7 +147,9 @@ export const ProductOfflineStorage = {
   },
 };
 
-// ─── Commandes hors ligne ─────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// COMMANDES HORS LIGNE
+// ═══════════════════════════════════════════════════════════
 
 export const OrderOfflineStorage = {
 
@@ -202,40 +162,21 @@ export const OrderOfflineStorage = {
     }
   },
 
-  // Créer une commande hors ligne → l'ajoute à la SyncQueue
-  async createOrder(
-    accountId: string,
-    items: OrderItem[],
-    options?: { address?: string; note?: string }
-  ): Promise<OfflineOrder> {
-    const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-
-    const order: OfflineOrder = {
-      localId:      generateLocalId(),
-      accountId,
-      items,
-      total,
-      address:      options?.address,
-      note:         options?.note,
-      status:       'pending_sync' as OfflineOrder['status'],
-      createdAt:    Date.now(),
-      syncAttempts: 0,
-    };
-
+  // Persiste une OfflineOrder déjà construite par useCheckout
+  async saveOrder(accountId: string, order: OfflineOrder): Promise<OfflineOrder> {
     const orders = await this.getOrders(accountId);
     orders.push(order);
     await AsyncStorage.setItem(KEYS.orders(accountId), JSON.stringify(orders));
-    await SyncQueue.add(order.localId, accountId);
-
-    console.log(`[OfflineStorage] Commande ${order.localId} créée (hors ligne)`);
+    await SyncQueue.add((order as any).localId, accountId);
+    console.log(`[OfflineStorage] Commande ${(order as any).localId} sauvegardée (hors ligne)`);
     return order;
   },
 
-  // Mettre à jour le statut après tentative de sync (appelé par SyncService)
-  async updateOrderStatus(
+  // Mettre à jour le statut après tentative de sync
+  async patchOrder(
     accountId: string,
-    localId: string,
-    patch: Partial<Pick<OfflineOrder, 'status' | 'serverId' | 'syncError' | 'syncAttempts'>>
+    localId:   string,
+    patch:     Partial<Pick<OfflineOrder, 'status' | 'serverId' | 'syncError' | 'syncAttempts'>>
   ): Promise<void> {
     const orders = await this.getOrders(accountId);
     const idx = orders.findIndex((o) => o.localId === localId);
@@ -252,13 +193,15 @@ export const OrderOfflineStorage = {
 
   async getAllOrdersAllAccounts(): Promise<OfflineOrder[]> {
     const keys = await AsyncStorage.getAllKeys();
-    const orderKeys = keys.filter((k) => k.startsWith('@offline:orders:'));
+    const orderKeys = keys.filter((k) => k.startsWith('@offline_delivery_orders:'));
     const results = await AsyncStorage.multiGet(orderKeys);
     return results.flatMap(([, val]) => (val ? JSON.parse(val) : []));
   },
 };
 
-// ─── File de synchronisation globale ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// FILE DE SYNCHRONISATION
+// ═══════════════════════════════════════════════════════════
 
 export const SyncQueue = {
 
@@ -273,8 +216,7 @@ export const SyncQueue = {
 
   async add(localId: string, accountId: string): Promise<void> {
     const queue = await this.getAll();
-    // Éviter les doublons
-    if (queue.some((i) => i.localId === localId)) return;
+    if (queue.some((i) => i.localId === localId)) return; // évite les doublons
     queue.push({ localId, accountId, addedAt: Date.now() });
     await AsyncStorage.setItem(KEYS.syncQueue, JSON.stringify(queue));
   },

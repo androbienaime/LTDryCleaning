@@ -167,3 +167,61 @@ class ApiClient {
 
 const apiClient = new ApiClient();
 export default apiClient;
+
+// ── extractApiError ──────────────────────────────────────────────────────────
+//
+// Axios met le vrai corps de réponse dans error.response.data.
+// Laravel retourne :
+//   { message: "...", errors: { field: ["msg"] } }  ← validation 422
+//   { message: "...", error: "..." }                ← erreur 500 applicative
+//
+// Cette fonction extrait tout ça pour l'afficher lisiblement dans les logs
+// ou le montrer à l'utilisateur.
+
+export type ApiError = {
+  message: string;                               // message principal
+  errors:  Record<string, string[]> | null;      // erreurs de validation champ par champ
+  status:  number | null;                        // code HTTP (422, 500, ...)
+  raw:     unknown;                              // corps brut pour debug
+};
+
+export function extractApiError(e: unknown): ApiError {
+  // AxiosError → response.data contient la vraie réponse Laravel
+  const axiosResponse = (e as any)?.response;
+
+  if (axiosResponse) {
+    const data    = axiosResponse.data ?? {};
+    const status  = axiosResponse.status ?? null;
+
+    // Laravel validation (422) : { message, errors: { field: [msg] } }
+    // Laravel applicative (500) : { message, error: "string" }
+    const message =
+      data.message ??
+      data.error   ??
+      `Erreur HTTP ${status}`;
+
+    const errors: Record<string, string[]> | null =
+      data.errors ?? null;
+
+    return { message, errors, status, raw: data };
+  }
+
+  // Erreur réseau pure (pas de réponse)
+  return {
+    message: (e as any)?.message ?? 'Erreur réseau inconnue',
+    errors:  null,
+    status:  null,
+    raw:     e,
+  };
+}
+
+// Formatte les erreurs de validation en une seule string lisible
+// Utile pour les toasts / alerts dans l'UI
+export function formatApiErrors(apiError: ApiError): string {
+  if (apiError.errors) {
+    return Object.entries(apiError.errors)
+      .map(([field, messages]) => `${field}: ${messages.join(', ')}`)
+      .join('\n');
+  }
+  return apiError.message;
+}
