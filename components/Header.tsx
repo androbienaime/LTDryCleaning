@@ -4,8 +4,8 @@ import { StyleSheet, TouchableOpacity, ViewStyle, View, Text, Platform } from "r
 import { Ionicons } from "@expo/vector-icons";
 import { typography, useThemeColors } from "@/theme";
 import SearchProductComponent from "./modules/products/SearchProductComponent";
-import { useNavigation } from "@react-navigation/native";
-import { CartStackParamList } from "@/src/@types/navigation";
+import { NavigationProp, useNavigation } from "@react-navigation/native";
+import { CartStackParamList, RootStackParamList } from "@/src/@types/navigation";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import useCart from "@/hooks/useCart";
 
@@ -37,6 +37,8 @@ const Header = ({
 }: Props) => {
   const colors = useThemeColors();
   const navigation = useNavigation<NativeStackNavigationProp<CartStackParamList>>();
+  const navigations = useNavigation<NavigationProp<RootStackParamList>>();
+
   const {itemCount} = useCart();
 
   const styles = useMemo(
@@ -44,9 +46,14 @@ const Header = ({
     [colors, typography, backgroundColor]
   );
 
-  const handleCart = () =>{
-      navigation.navigate("Cart");
-  }
+ const handleCart = () => {
+  navigations.navigate("Main", {
+    screen: "CartStack",   // ✅ nom du tab dans MainTabParamList
+    params: {
+      screen: "Cart"       // ✅ nom de l'écran dans CartStackParamList
+    }
+  });
+};
 
   return (
     <ThemedView style={[styles.header, style]} {...otherProps}>

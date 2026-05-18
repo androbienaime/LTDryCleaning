@@ -34,7 +34,7 @@ export type CartStackParamList = {
   OrderConfirmation: {
     orderId: string;
   };
-  OrderHistory: undefined;
+  // OrderHistory: undefined;
 };
 
 // Paramètres pour la pile de navigation Profile

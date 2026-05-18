@@ -48,6 +48,7 @@ export function cartItemsToOrderProducts(cartItems: CartItem[]) {
   return cartItems.map((item) => ({
     id:          item.product.id,
     quantity:    item.quantity,
+    product :   item.product,
     sub_totals:  itemSubTotal(item),
     declination: item.Declination?.id ?? null,
     delivery:    null,

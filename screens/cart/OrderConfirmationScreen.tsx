@@ -8,6 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { Customer } from '@/src/@types/models';
+import { ProfileStackParamList } from '@/src/@types/navigation';
+import { useNavigation }  from "@react-navigation/native";
 
 type Params = {
   OrderConfirmation: {
@@ -27,9 +29,13 @@ type Props = {
 
 const OrderConfirmationScreen = ({ navigation, route }: Props) => {
   const { orderId, isOffline, message, customer, total, deliveryDate } = route.params;
-
+  const navigationHist = useNavigation<NativeStackNavigationProp<any>>();
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
+
+  const handleHistory = () => {
+      navigationHist.navigate("ProfileStack", {screen : 'OrderHistory'})
+  }
 
   useEffect(() => {
     Animated.sequence([
@@ -77,7 +83,7 @@ const OrderConfirmationScreen = ({ navigation, route }: Props) => {
         {/* Récapitulatif */}
         <Animated.View style={[styles.card, { opacity: fadeAnim }]}>
           <Row label="Référence"  value={isOffline ? String(orderId).slice(0, 16) + '...' : `#${orderId}`} />
-          <Row label="Client"     value={customer.name} />
+          <Row label="Client"     value={customer.name ?? ''} />
           <Row label="Téléphone"  value={customer.phone} />
           <Row label="Livraison"  value={deliveryDateFormatted} />
           <View style={styles.divider} />
@@ -96,7 +102,7 @@ const OrderConfirmationScreen = ({ navigation, route }: Props) => {
 
         <TouchableOpacity
           style={[styles.btn, styles.btnOutline]}
-          onPress={() => navigation.navigate('Profile', { screen: 'OrderHistory' })}
+          onPress={handleHistory}
         >
           <Text style={[styles.btnText, { color: '#4F46E5' }]}>Voir mes commandes</Text>
         </TouchableOpacity>

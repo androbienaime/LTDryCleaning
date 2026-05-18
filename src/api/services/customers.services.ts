@@ -165,7 +165,7 @@ export const customersService = {
     // 2. Crée si absent
     console.log('[customersService.findOrCreate] Absent → création');
     const created = await this.create(shopId, customer);
-    console.log('[customersService.findOrCreate] Créé avec ID :', created.id);
+    console.log('[customersService.findOrCreate] Créé avec ID :', created);
     return created;
   },
 };

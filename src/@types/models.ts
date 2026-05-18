@@ -124,6 +124,7 @@ export function itemSubTotal(item: CartItem): number {
 export function cartItemsToOrderProducts(cartItems: CartItem[]) {
   return cartItems.map((item) => ({
     id:          item.product.id,
+    product :    item.product,
     quantity:    item.quantity,
     sub_totals:  itemSubTotal(item),
     declination: item.Declination?.id ?? null,

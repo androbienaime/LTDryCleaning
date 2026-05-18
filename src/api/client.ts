@@ -1,4 +1,11 @@
 // src/api/apiClient.ts
+//
+// ⚠️ PRINCIPE CLÉ :
+// La source de vérité des tokens est MultiAccountStorage (par compte).
+// storage.setData('auth_token') n'est qu'un cache temporaire de la session active.
+// À chaque requête, on lit le token du compte ACTIF dans MultiAccountStorage
+// pour ne jamais utiliser le token d'un autre compte.
+
 import axios from 'axios';
 import type { AxiosRequestConfig, AxiosError, AxiosInstance } from 'axios';
 import { storage } from '@/utils/storage';
@@ -7,12 +14,49 @@ import { extractPermissions } from '@/utils/jwt';
 import API_CONFIG from '@/src/api/config';
 import type { SavedAccount } from '@/src/@types/models';
 
+// ── Helper : lire le token du compte actif ────────────────────────────────────
+// Toujours lire depuis MultiAccountStorage pour éviter les collisions entre comptes.
+
+async function getActiveToken(): Promise<string | null> {
+  const account = await MultiAccountStorage.getActiveAccount();
+  return account?.token ?? null;
+}
+
+async function getActiveRefreshToken(): Promise<string | null> {
+  const account = await MultiAccountStorage.getActiveAccount();
+  return account?.refreshToken ?? account?.token ?? null;
+}
+
+// ── Helper : persister les nouveaux tokens sur le compte actif ────────────────
+
+async function persistTokensOnActiveAccount(
+  token:        string,
+  refreshToken: string,
+): Promise<void> {
+  const store = await MultiAccountStorage.getStore();
+
+  store.accounts = store.accounts.map((a: SavedAccount) => {
+    if (a.isActive) {
+      return { ...a, token, refreshToken };
+    }
+    return a;
+  });
+
+  await MultiAccountStorage.saveStore(store);
+
+  // Mettre à jour aussi le cache storage (utilisé comme fallback rapide)
+  await storage.setData('auth_token',    token);
+  await storage.setData('refresh_token', refreshToken);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 class ApiClient {
   private instance: AxiosInstance;
   private isRefreshing = false;
   private failedQueue: Array<{
     resolve: (token: string) => void;
-    reject: (err: unknown) => void;
+    reject:  (err: unknown) => void;
   }> = [];
 
   constructor() {
@@ -25,13 +69,12 @@ class ApiClient {
     this.setupInterceptors();
   }
 
-  // ── Interceptors ────────────────────────────────────────────────────────────
-
   private setupInterceptors(): void {
-    // REQUEST : injecte le Bearer token automatiquement
+
+    // REQUEST : injecte le token du compte ACTIF (pas storage global)
     this.instance.interceptors.request.use(
       async (config) => {
-        const token = await storage.getData('auth_token');
+        const token = await getActiveToken(); // ← compte actif uniquement
         if (token) {
           config.headers.set?.('Authorization', `Bearer ${token}`);
         }
@@ -50,7 +93,6 @@ class ApiClient {
           return Promise.reject(error);
         }
 
-        // Plusieurs requêtes simultanées → mise en file d'attente
         if (this.isRefreshing) {
           return new Promise<string>((resolve, reject) => {
             this.failedQueue.push({ resolve, reject });
@@ -64,21 +106,32 @@ class ApiClient {
         originalRequest._retry = true;
 
         try {
-          const refresh_token = await storage.getData('refresh_token');
+          // Lire le refresh token du compte ACTIF
+          const refreshToken = await getActiveRefreshToken();
 
-          const response = await axios.post<{ token: string }>(
+          // Appel direct axios (pas apiClient) pour éviter la boucle infinie.
+          // /account/refresh est public et lit depuis le header Authorization.
+          const response = await axios.post<{
+            status: string;
+            data:   { token: string; refresh_token: string };
+          }>(
             `${API_CONFIG.BASE_URL}/account/refresh`,
-            { refresh_token },
+            {},
+            {
+              headers: {
+                ...API_CONFIG.HEADERS,
+                Authorization: `Bearer ${refreshToken}`,
+              },
+            },
           );
 
-          const { token } = response.data;
+          const { token, refresh_token: newRefreshToken } = response.data.data;
 
-          // Persiste les nouveaux tokens
-          await storage.setData('auth_token', token);
-          await storage.setData('refresh_token', token);
+          // Persister sur le compte actif (MultiAccountStorage + cache storage)
+          await persistTokensOnActiveAccount(token, newRefreshToken);
 
-          // Met à jour les permissions dans le multi-account storage
-          await this.syncPermissionsAfterRefresh(token);
+          // Synchroniser les permissions JWT
+          await this.syncPermissionsAfterRefresh(token, newRefreshToken);
 
           this.processQueue(null, token);
 
@@ -88,10 +141,18 @@ class ApiClient {
         } catch (refreshError) {
           this.processQueue(refreshError, null);
 
+          // Ne pas supprimer les tokens globalement —
+          // seulement désactiver le compte actif
+          const store = await MultiAccountStorage.getStore();
+          store.activeAccountId = null;
+          store.accounts = store.accounts.map((a: SavedAccount) =>
+            ({ ...a, isActive: false })
+          );
+          await MultiAccountStorage.saveStore(store);
+
           await storage.removeData('auth_token');
           await storage.removeData('refresh_token');
 
-          // Déclenche le logout global via event emitter si disponible
           // eventEmitter.emit('auth:logout');
 
           return Promise.reject(refreshError);
@@ -102,8 +163,6 @@ class ApiClient {
     );
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
   private processQueue(error: unknown, token: string | null): void {
     this.failedQueue.forEach((p) => {
       error ? p.reject(error) : p.resolve(token!);
@@ -111,12 +170,10 @@ class ApiClient {
     this.failedQueue = [];
   }
 
-  /**
-   * Après un refresh, les claims JWT contiennent de nouvelles permissions.
-   * On les synchronise dans le multi-account storage pour que
-   * AuthContext reflète la réalité sans logout/login.
-   */
-  private async syncPermissionsAfterRefresh(token: string): Promise<void> {
+  private async syncPermissionsAfterRefresh(
+    token:        string,
+    refreshToken: string,
+  ): Promise<void> {
     try {
       const permissions = extractPermissions(token);
       const store = await MultiAccountStorage.getStore();
@@ -125,7 +182,7 @@ class ApiClient {
           return {
             ...a,
             token,
-            refreshToken: token,
+            refreshToken,
             user: { ...a.user, permissions },
           };
         }
@@ -137,76 +194,52 @@ class ApiClient {
     }
   }
 
-  // ── HTTP methods ─────────────────────────────────────────────────────────────
+  // ── HTTP methods ────────────────────────────────────────────────────────────
 
   async get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    const r = await this.instance.get<T>(url, config);
-    return r.data;
+    return (await this.instance.get<T>(url, config)).data;
   }
 
   async post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-    const r = await this.instance.post<T>(url, data, config);
-    return r.data;
+    return (await this.instance.post<T>(url, data, config)).data;
   }
 
   async put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-    const r = await this.instance.put<T>(url, data, config);
-    return r.data;
+    return (await this.instance.put<T>(url, data, config)).data;
   }
 
   async patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-    const r = await this.instance.patch<T>(url, data, config);
-    return r.data;
+    return (await this.instance.patch<T>(url, data, config)).data;
   }
 
   async delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    const r = await this.instance.delete<T>(url, config);
-    return r.data;
+    return (await this.instance.delete<T>(url, config)).data;
   }
 }
 
 const apiClient = new ApiClient();
 export default apiClient;
 
-// ── extractApiError ──────────────────────────────────────────────────────────
-//
-// Axios met le vrai corps de réponse dans error.response.data.
-// Laravel retourne :
-//   { message: "...", errors: { field: ["msg"] } }  ← validation 422
-//   { message: "...", error: "..." }                ← erreur 500 applicative
-//
-// Cette fonction extrait tout ça pour l'afficher lisiblement dans les logs
-// ou le montrer à l'utilisateur.
+// ── extractApiError ───────────────────────────────────────────────────────────
 
 export type ApiError = {
-  message: string;                               // message principal
-  errors:  Record<string, string[]> | null;      // erreurs de validation champ par champ
-  status:  number | null;                        // code HTTP (422, 500, ...)
-  raw:     unknown;                              // corps brut pour debug
+  message: string;
+  errors:  Record<string, string[]> | null;
+  status:  number | null;
+  raw:     unknown;
 };
 
 export function extractApiError(e: unknown): ApiError {
-  // AxiosError → response.data contient la vraie réponse Laravel
   const axiosResponse = (e as any)?.response;
 
   if (axiosResponse) {
-    const data    = axiosResponse.data ?? {};
-    const status  = axiosResponse.status ?? null;
-
-    // Laravel validation (422) : { message, errors: { field: [msg] } }
-    // Laravel applicative (500) : { message, error: "string" }
-    const message =
-      data.message ??
-      data.error   ??
-      `Erreur HTTP ${status}`;
-
-    const errors: Record<string, string[]> | null =
-      data.errors ?? null;
-
+    const data   = axiosResponse.data ?? {};
+    const status = axiosResponse.status ?? null;
+    const message = data.message ?? data.error ?? `Erreur HTTP ${status}`;
+    const errors: Record<string, string[]> | null = data.errors ?? null;
     return { message, errors, status, raw: data };
   }
 
-  // Erreur réseau pure (pas de réponse)
   return {
     message: (e as any)?.message ?? 'Erreur réseau inconnue',
     errors:  null,
@@ -215,8 +248,6 @@ export function extractApiError(e: unknown): ApiError {
   };
 }
 
-// Formatte les erreurs de validation en une seule string lisible
-// Utile pour les toasts / alerts dans l'UI
 export function formatApiErrors(apiError: ApiError): string {
   if (apiError.errors) {
     return Object.entries(apiError.errors)

@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMultiAccount } from '@/context/MultiAccountContext';
 import { useProducts } from '@/context/ProductContext';
-import type { OfflineDeliveryOrder } from '@/src/@types/models';
+import type { OfflineDeliveryOrder, OfflineOrder } from '@/src/@types/models';
 
 // ─── Clé AsyncStorage (même que useCheckout) ─────────────────────────────────
 const OFFLINE_ORDERS_KEY = (accountId: string) =>
@@ -34,17 +34,18 @@ const StatusBadge = ({ status }: { status: OfflineDeliveryOrder['status'] }) => 
 };
 
 // ─── Carte commande ───────────────────────────────────────────────────────────
-const OrderCard = ({ order }: { order: OfflineDeliveryOrder }) => {
+const OrderCard = ({ order }: { order: OfflineOrder }) => {
   const date = new Date(order.createdAt).toLocaleDateString('fr-FR', {
     day: '2-digit', month: 'short', year: 'numeric',
   });
 
-  const deliveryLabel = order.delivery_date
-    ? new Date(order.delivery_date).toLocaleDateString('fr-FR', {
-        day: '2-digit', month: 'short',
-      })
-    : null;
+  // const deliveryLabel = order.delivery_date
+  //   ? new Date(order.delivery_date).toLocaleDateString('fr-FR', {
+  //       day: '2-digit', month: 'short',
+  //     })
+  //   : null;
 
+    
   return (
     <View style={styles.card}>
       {/* En-tête */}
@@ -61,45 +62,47 @@ const OrderCard = ({ order }: { order: OfflineDeliveryOrder }) => {
       {/* Client */}
       <View style={styles.cardRow}>
         <Ionicons name="person-outline" size={14} color="#64748B" />
-        <Text style={styles.cardRowText}>{order.customer.name}</Text>
-        <Text style={styles.cardRowSub}>{order.customer.phone}</Text>
+        <Text style={styles.cardRowText}>{order._customer?.name ?? ''}</Text>
+        <Text style={styles.cardRowSub}>{order._customer?.phone ?? ''}</Text>
       </View>
 
       {/* Livraison */}
-      {deliveryLabel && (
+      {/* {deliveryLabel && (
         <View style={styles.cardRow}>
           <Ionicons name="calendar-outline" size={14} color="#64748B" />
           <Text style={styles.cardRowText}>
             {deliveryLabel}{order.delivery_time ? ` à ${order.delivery_time}` : ''}
           </Text>
         </View>
-      )}
+      )} */}
 
       {/* Articles */}
       <View style={styles.cardRow}>
         <Ionicons name="cube-outline" size={14} color="#64748B" />
         <Text style={styles.cardRowText}>
-          {order.items.length} article{order.items.length > 1 ? 's' : ''}
+          {order.order_products.length} article{order.order_products.length > 1 ? 's' : ''}
         </Text>
       </View>
 
+      
       {/* Liste articles */}
       <View style={styles.itemsList}>
-        {order.items.map((item, i) => (
+        {order.order_products.map((item, i) => (
           <View key={i} style={styles.itemRow}>
-            <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
+             <Text style={styles.itemName} numberOfLines={1}>{item.product.name ?? ''}</Text>
             <Text style={styles.itemQty}>×{item.quantity}</Text>
             <Text style={styles.itemPrice}>
-              {(item.price * item.quantity).toLocaleString()}
-            </Text>
-          </View>
+            {(item.sub_totals).toLocaleString()}
+            </Text> 
+          </View> 
+          
         ))}
       </View>
 
       {/* Total */}
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>Total</Text>
-        <Text style={styles.totalAmount}>{order.total.toLocaleString()} HTG</Text>
+        <Text style={styles.totalAmount}>{order.total_amount_order.toLocaleString()} HTG</Text>
       </View>
 
       {/* Erreur sync */}
@@ -111,9 +114,9 @@ const OrderCard = ({ order }: { order: OfflineDeliveryOrder }) => {
       )}
 
       {/* Note */}
-      {order.note ? (
+      {/* {order.note ? (
         <Text style={styles.note}>📝 {order.note}</Text>
-      ) : null}
+      ) : null} */}
     </View>
   );
 };
@@ -124,14 +127,14 @@ const OrderHistoryScreen = ({ navigation }: any) => {
   const { apiStatus }     = useProducts();
   const accountId         = activeAccount?.id ?? '';
 
-  const [orders,      setOrders]      = useState<OfflineDeliveryOrder[]>([]);
+  const [orders,      setOrders]      = useState<OfflineOrder[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [refreshing,  setRefreshing]  = useState(false);
 
   const load = async () => {
     try {
       const raw = await AsyncStorage.getItem(OFFLINE_ORDERS_KEY(accountId));
-      const parsed: OfflineDeliveryOrder[] = raw ? JSON.parse(raw) : [];
+      const parsed: OfflineOrder[] = raw ? JSON.parse(raw) : [];
       // Plus récente en premier
       setOrders(parsed.sort((a, b) => b.createdAt - a.createdAt));
     } catch (e) {
@@ -204,7 +207,10 @@ const OrderHistoryScreen = ({ navigation }: any) => {
         </View>
       )}
 
+      
+
       {/* Liste */}
+      
       <FlatList
         data={orders}
         keyExtractor={(o) => o.localId}
@@ -221,6 +227,7 @@ const OrderHistoryScreen = ({ navigation }: any) => {
           </View>
         }
       />
+     
     </SafeAreaView>
   );
 };

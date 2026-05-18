@@ -198,6 +198,7 @@ export function useCheckout(): UseCheckoutReturn {
     if (!apiOk || !shopId) return;
     setIsCalculating(true);
     try {
+      console.log("[useCheckout] CartItems : ", cartItems[0].Declination?.id);
       const serverTotal = await ordersService.calculateTotal(shopId, {
         order_products: cartItems.map((item: CartItem) => ({
           product:        item.product.slug,
@@ -209,6 +210,11 @@ export function useCheckout(): UseCheckoutReturn {
       setComputedTotal(serverTotal);
     } catch (e) {
       console.warn('[useCheckout] calculateTotal échec, total local conservé', e);
+        const apiError = extractApiError(e);
+        console.warn('  message :', apiError.message);
+        console.warn('  errors  :', JSON.stringify(apiError.errors, null, 2));
+        console.warn('  status  :', apiError.status);
+        console.warn('  raw     :', JSON.stringify(apiError.raw, null, 2));
     } finally {
       setIsCalculating(false);
     }
