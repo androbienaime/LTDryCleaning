@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useMultiAccount } from '@/context/MultiAccountContext';
 import { SavedAccount } from '@/utils/multiAccountStorage';
+import { useAuth } from '@/context/AuthContext';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -226,23 +227,25 @@ const AccountsManagerScreen: React.FC<Props> = ({ onSwitched, onAddAccount }) =>
   const [pinModal, setPinModal] = useState<{
     visible: boolean;
     account: SavedAccount | null;
+    accountActive: SavedAccount | null;
     mode: 'set' | 'remove' | 'verify';
     actionAfterVerify?: 'delete' | 'removePin';
-  }>({ visible: false, account: null, mode: 'set' });
+  }>({ visible: false, account: null, accountActive: null,  mode: 'set' });
 
   const openPinModal = (
     account: SavedAccount,
+    accountActive : SavedAccount,
     mode: 'set' | 'remove' | 'verify',
     actionAfterVerify?: 'delete' | 'removePin'
   ) => {
-    setPinModal({ visible: true, account, mode, actionAfterVerify });
+    setPinModal({ visible: true, account, accountActive, mode, actionAfterVerify });
   };
 
   const closePinModal = () =>
-    setPinModal({ visible: false, account: null, mode: 'set' });
+    setPinModal({ visible: false, account: null, accountActive : null, mode: 'set' });
 
   const handlePinConfirm = async (pin: string) => {
-    const { account, mode, actionAfterVerify } = pinModal;
+    const { account, accountActive, mode, actionAfterVerify } = pinModal;
     if (!account) return;
     closePinModal();
 
@@ -254,7 +257,7 @@ const AccountsManagerScreen: React.FC<Props> = ({ onSwitched, onAddAccount }) =>
       // Vérifier puis exécuter l'action
       const { MultiAccountStorage } = await import('@/utils/multiAccountStorage');
       const matched = await MultiAccountStorage.verifyPin(pin);
-      if (!matched || matched.id !== account.id) {
+      if (!matched || matched.id !== accountActive.id) {
         Alert.alert('PIN incorrect', 'Le PIN entré ne correspond pas.');
         return;
       }
@@ -272,7 +275,7 @@ const AccountsManagerScreen: React.FC<Props> = ({ onSwitched, onAddAccount }) =>
     onSwitched?.(account.id);
   };
 
-  const handleDeleteAccount = (account: SavedAccount) => {
+  const handleDeleteAccount = (account: SavedAccount, accountActive: SavedAccount) => {
     const doDelete = () =>
       Alert.alert(
         'Supprimer le compte',
@@ -287,30 +290,30 @@ const AccountsManagerScreen: React.FC<Props> = ({ onSwitched, onAddAccount }) =>
         ]
       );
 
-    if (account.pinHash) {
-      openPinModal(account, 'verify', 'delete');
+    if (activeAccount?.pinHash) {
+      openPinModal(account, accountActive, 'verify', 'delete');
     } else {
       doDelete();
     }
   };
 
-  const handleTogglePin = (account: SavedAccount) => {
+  const handleTogglePin = (account: SavedAccount, accountActive: SavedAccount) => {
     if (account.pinHash) {
       // Proposer de supprimer le PIN
       Alert.alert('PIN actif', 'Que souhaitez-vous faire ?', [
         { text: 'Annuler', style: 'cancel' },
         {
           text: 'Modifier le PIN',
-          onPress: () => openPinModal(account, 'set'),
+          onPress: () => openPinModal(account, accountActive, 'set'),
         },
         {
           text: 'Supprimer le PIN',
           style: 'destructive',
-          onPress: () => openPinModal(account, 'verify', 'removePin'),
+          onPress: () => openPinModal(account, accountActive, 'verify', 'removePin'),
         },
       ]);
     } else {
-      openPinModal(account, 'set');
+      openPinModal(account, accountActive, 'set');
     }
   };
 
@@ -325,6 +328,20 @@ const AccountsManagerScreen: React.FC<Props> = ({ onSwitched, onAddAccount }) =>
     return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
   };
 
+    const shopId: string = activeAccount?.user?.shop?.[0]?.id ?? '';
+    const { hasPermission } = useAuth();
+
+    const canViewAccounts = hasPermission(
+      shopId,
+      'view_core::account'
+    );
+
+    const visibleAccounts = canViewAccounts
+    ? sorted
+    : sorted.filter(
+        (account) => account.id === activeAccount?.id
+    );
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" />
@@ -333,91 +350,106 @@ const AccountsManagerScreen: React.FC<Props> = ({ onSwitched, onAddAccount }) =>
         <Text style={styles.subtitle}>
           {accounts.length} compte{accounts.length !== 1 ? 's' : ''} sur cet appareil
         </Text>
-        {sorted.map((account) => {
-          const isActive = account.id === activeAccount?.id;
-          return (
+  
+
+    {visibleAccounts.map((account) => {
+
+      const isActive = account.id === activeAccount?.id;
+
+      return (
+        <View
+          key={account.id}
+          style={[styles.card, isActive && styles.cardActive]}
+        >
+          {/* Avatar + infos */}
+          <TouchableOpacity
+            style={styles.cardLeft}
+            onPress={() => handleSwitch(account)}
+            activeOpacity={0.8}
+          >
             <View
-              key={account.id}
-              style={[styles.card, isActive && styles.cardActive]}
+              style={[
+                styles.avatar,
+                { backgroundColor: account.avatarColor },
+                isActive && styles.avatarActive,
+              ]}
             >
-              {/* Avatar + infos */}
-              <TouchableOpacity
-                style={styles.cardLeft}
-                onPress={() => handleSwitch(account)}
-                activeOpacity={0.8}
-              >
-                <View
-                  style={[
-                    styles.avatar,
-                    { backgroundColor: account.avatarColor },
-                    isActive && styles.avatarActive,
-                  ]}
-                >
-                  
-                  {account.user.account_profile != undefined ? (
-                    <Image
-                      source={{ uri: account.user.account_profile }} style={styles.itemImg} />
-                  ) : (
-                    <Text style={styles.avatarText}>
-                      {account.user.firstname?.charAt(0)?.toUpperCase() ?? '?'}
-                    </Text>
-                  )}
-                </View>
-
-                <View style={styles.info}>
-                  <View style={styles.nameRow}>
-                    <Text style={styles.name} numberOfLines={1}>
-                      {account.user.firstname}
-                    </Text>
-                    {isActive && (
-                      <View style={styles.activeBadge}>
-                        <Text style={styles.activeBadgeText}>Actif</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.email} numberOfLines={1}>
-                    {account.user.email}
-                  </Text>
-                  <Text style={styles.meta}>
-                    Dernière utilisation : {formatDate(account.lastUsedAt)}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Actions */}
-              <View style={styles.cardActions}>
-                {/* Bouton PIN */}
-                <TouchableOpacity
-                  style={[
-                    styles.pinBtn,
-                    account.pinHash && styles.pinBtnActive,
-                  ]}
-                  onPress={() => handleTogglePin(account)}
-                >
-                  <Text style={styles.pinIcon}>
-                    {account.pinHash ? '🔒' : '🔓'}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.pinLabel,
-                      account.pinHash && styles.pinLabelActive,
-                    ]}
-                  >
-                    PIN
-                  </Text>
-                </TouchableOpacity>
-
-                {/* Supprimer */}
-                <TouchableOpacity
-                  style={styles.deleteBtn}
-                  onPress={() => handleDeleteAccount(account)}
-                >
-                  <Text style={styles.deleteIcon}>🗑</Text>
-                </TouchableOpacity>
-              </View>
+              {account.user.account_profile != undefined ? (
+                <Image
+                  source={{ uri: account.user.account_profile }}
+                  style={styles.itemImg}
+                />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {account.user.firstname?.charAt(0)?.toUpperCase() ?? '?'}
+                </Text>
+              )}
             </View>
-          );
-        })}
+
+            <View style={styles.info}>
+              <View style={styles.nameRow}>
+                <Text style={styles.name} numberOfLines={1}>
+                  {account.user.firstname}
+                </Text>
+
+                {isActive && (
+                  <View style={styles.activeBadge}>
+                    <Text style={styles.activeBadgeText}>
+                      Actif
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <Text style={styles.email} numberOfLines={1}>
+                {account.user.email}
+              </Text>
+
+              <Text style={styles.meta}>
+                Dernière utilisation :{' '}
+                {formatDate(account.lastUsedAt)}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Actions */}
+          <View style={styles.cardActions}>
+
+            {/* Bouton PIN */}
+            <TouchableOpacity
+              style={[
+                styles.pinBtn,
+                account.pinHash && styles.pinBtnActive,
+              ]}
+              onPress={() => handleTogglePin(account, activeAccount)}
+            >
+              <Text style={styles.pinIcon}>
+                {account.pinHash ? '🔒' : '🔓'}
+              </Text>
+
+              <Text
+                style={[
+                  styles.pinLabel,
+                  account.pinHash &&
+                    styles.pinLabelActive,
+                ]}
+              >
+                PIN
+              </Text>
+            </TouchableOpacity>
+
+            {/* Supprimer */}
+            <TouchableOpacity
+              style={styles.deleteBtn}
+              onPress={() => handleDeleteAccount(account, activeAccount)}
+            >
+              <Text style={styles.deleteIcon}>🗑</Text>
+            </TouchableOpacity>
+
+          </View>
+        </View>
+      );
+    })}
 
         {/* Ajouter un compte */}
         <TouchableOpacity style={styles.addBtn} onPress={onAddAccount}>
