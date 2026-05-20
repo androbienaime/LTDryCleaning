@@ -5,6 +5,7 @@ type JWTPayload = {
   sub: number;
   exp: number;
   permissions: Record<string, string[]>;
+  is_super_admin?: boolean; // Ce claim doit être ajouté côté backend
 };
 
 /**
@@ -32,3 +33,39 @@ export const isTokenExpired = (token: string): boolean => {
     return true;
   }
 };
+
+
+
+/**
+ * Décode le payload d'un JWT sans vérifier la signature.
+ * Utilisé uniquement côté client pour lire les claims.
+ */
+function decodeJwtPayload(token: string): Record<string, any> | null {
+  try {
+    const base64 = token.split('.')[1];
+    // React Native n'a pas atob natif → polyfill via base-64 ou Buffer
+    const decoded = Buffer.from(base64, 'base64').toString('utf-8');
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+}
+ 
+/**
+ * Retourne true si le JWT contient le claim `is_super_admin: true`.
+ * Ce claim doit être ajouté dans Account::getJWTCustomClaims() côté backend.
+ */
+export function extractIsSuperAdmin(token: string): boolean {
+
+  const payload = jwtDecode<JWTPayload>(token);
+
+      console.log('JWT Payload:', payload.is_super_admin); // Debug : vérifier le contenu du payload
+
+  return payload?.is_super_admin === true;
+}
+ 
+/**
+ * Extrait les permissions depuis le JWT (votre fonction existante, gardez-la).
+ * export function extractPermissions(token: string): Record<string, string[]> { ... }
+ */
+ 

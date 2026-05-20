@@ -6,6 +6,7 @@ import { extractPermissions } from '@/utils/jwt';
 import { AccountUser, SavedAccount } from '@/src/@types/models';
 import { authService } from '@/src/api/services/auth.service';
 import { storage } from '@/utils/storage';
+import { AppSetup } from '@/utils/appSetup';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Extrait les permissions embarquées dans le JWT
       const permissions = extractPermissions(token);
       const userWithPermissions: AccountUser = { ...apiUser, permissions };
+
+
+    // ── ✅ Vérification shop ───────────────────────────────────────────────
+    // Si un SHOP_ID est configuré (setup déjà effectué), on bloque tout
+    // utilisateur qui n'est pas associé à ce shop.
+    const configuredShopId = await AppSetup.getConfig().then(c => c.shopId);
+
+    if (configuredShopId) {
+      const userShopIds = (userWithPermissions.shop ?? []).map(s => String(s.id));
+
+      if (!userShopIds.includes(String(configuredShopId))) {
+        // On nettoie immédiatement les tokens déjà écrits par authService
+        throw new Error(
+          `Accès refusé : votre compte n'est pas associé à ce shop.`
+        );
+      }
+    }
 
       await storage.setData('auth_token', token);
       await storage.setData('refresh_token', refresh_token);

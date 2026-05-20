@@ -12,6 +12,8 @@ import MultiAccountProvider, { useMultiAccount } from './context/MultiAccountCon
 import PinEntryScreen from './screens/PinEntryScreen';
 import LoginScreen from './screens/auth/LoginScreen'; // ← import direct
 import OfflineProvider from './context/OfflineContext';
+import AppSetupProvider, { useAppSetup } from './context/AppSetupContext';
+import Setupscreen from './screens/config/Setupscreen'; // ← import direct
 
 
 enableScreens();
@@ -105,6 +107,7 @@ const gateStyles = StyleSheet.create({
 
 const AppGate = () => {
   const { isLoading, accounts } = useMultiAccount();
+  const { isSetupComplete, isCheckingSetup }        = useAppSetup();  // ← nouveau
 
   // 'pin' | 'password' | 'unlocked'
   const [gateState, setGateState] = useState('pin');
@@ -130,11 +133,34 @@ const AppGate = () => {
   }, []);
 
   // ── Chargement initial ────────────────────────────────────────────────────
-  if (isLoading) {
+  // if (isLoading) {
+  //   return (
+  //     <View style={gateStyles.loader}>
+  //       <ActivityIndicator size="large" color="#6366F1" />
+  //     </View>
+  //   );
+  // }
+
+
+    // ── Chargements initiaux ─────────────────────────────────────────────────
+  if (isLoading || isCheckingSetup) {
     return (
       <View style={gateStyles.loader}>
         <ActivityIndicator size="large" color="#6366F1" />
       </View>
+    );
+  }
+ 
+  // ── Setup non effectué → wizard de configuration ─────────────────────────
+  // Affiché AVANT tout le reste, même avant le PIN.
+  if (!isSetupComplete) {
+    return (
+      <Setupscreen
+        // Quand le setup est terminé, le compte super-admin a été ajouté
+        // par SetupScreen via addAccount → accounts.length passe à 1
+        // et isSetupComplete passe à true → on retombe dans le flux normal.
+        onSetupComplete={() => setGateState('unlocked')}
+      />
     );
   }
 
@@ -189,21 +215,23 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />
-      <MultiAccountProvider>
-        <AuthProvider>
-          <OfflineProvider>
-            <ProductProvider>
-              <CartProvider>
-                {/*
-                  AppGate gère lui-même le NavigationContainer.
-                  Il ne le monte QUE quand gateState === 'unlocked'.
-                */}
-                <AppGate />
-              </CartProvider>
-            </ProductProvider>
-          </OfflineProvider>
-        </AuthProvider>
-      </MultiAccountProvider>
+      <AppSetupProvider>           {/* ← nouveau wrapper */}
+        <MultiAccountProvider>
+          <AuthProvider>
+            <OfflineProvider>
+              <ProductProvider>
+                <CartProvider>
+                  {/*
+                    AppGate gère lui-même le NavigationContainer.
+                    Il ne le monte QUE quand gateState === 'unlocked'.
+                  */}
+                  <AppGate />
+                </CartProvider>
+              </ProductProvider>
+            </OfflineProvider>
+          </AuthProvider>
+        </MultiAccountProvider>
+      </AppSetupProvider>
     </SafeAreaProvider>
   );
 }

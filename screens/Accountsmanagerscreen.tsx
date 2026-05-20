@@ -336,6 +336,8 @@ const AccountsManagerScreen: React.FC<Props> = ({ onSwitched, onAddAccount }) =>
       'view_core::account'
     );
 
+    // const canDeleteAccounts = hasPermission(shopId, 'delete_core::account');
+
     const visibleAccounts = canViewAccounts
     ? sorted
     : sorted.filter(
@@ -438,18 +440,24 @@ const AccountsManagerScreen: React.FC<Props> = ({ onSwitched, onAddAccount }) =>
               </Text>
             </TouchableOpacity>
 
-            {/* Supprimer */}
-            <TouchableOpacity
-              style={styles.deleteBtn}
-              onPress={() => handleDeleteAccount(account, activeAccount)}
-            >
-              <Text style={styles.deleteIcon}>🗑</Text>
-            </TouchableOpacity>
+            {canViewAccounts ? (
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={() => handleDeleteAccount(account, activeAccount)}
+              >
+                <Text style={styles.deleteIcon}>🗑</Text>
+              </TouchableOpacity>
+            ) : (
+              <></>
+            )
+            
+            } 
 
           </View>
         </View>
       );
     })}
+
 
         {/* Ajouter un compte */}
         <TouchableOpacity style={styles.addBtn} onPress={onAddAccount}>
