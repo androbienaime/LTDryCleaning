@@ -111,6 +111,17 @@ const AppGate = () => {
 
   const { SyncService } = require('./src/api/services/sync.service');
 
+
+      // ✅ FIX : si aucun compte au démarrage → déverrouiller directement
+    // Ainsi, après la 1ère connexion, accounts.length passe à 1 mais
+    // gateState est déjà 'unlocked' → pas de PinEntryScreen intempestif.
+    useEffect(() => {
+      if (!isLoading && accounts.length === 0) {
+        setGateState('unlocked');
+      }
+    }, [isLoading]); // ← on ne dépend QUE de isLoading, pas de accounts.length
+                    //   pour ne pas re-évaluer après le login
+
   useEffect(() => {
     SyncService.startListening((result) => {
       console.log(`Sync terminée : ${result.synced} ok, ${result.failed} échec`);

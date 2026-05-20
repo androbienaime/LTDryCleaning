@@ -90,6 +90,7 @@ export interface User {
     quantity: number;
     selected_attributes?: Record<string, string>;
     Declination?: Declination
+    delivery?: DeliveryOrder | null;
   }
   
 // ═══════════════════════════════════════════════════════════
@@ -142,7 +143,7 @@ export interface Order {
   account?: number | null;
   merchant?: number | null;
   coupon?: number | null;
-  delivery?: number | null;
+  delivery?: Delivery | DeliveryPayload | null;
 
   // Products
   order_products: ReturnType <typeof cartItemsToOrderProducts>;
@@ -230,6 +231,46 @@ export interface Currencies {
 // COMMANDE COMPLÈTE (online + offline)
 // ═══════════════════════════════════════════════════════════
  
+export interface Delivery {
+  id: number;
+  costs?: number | 0;
+  delivery_date : string;
+}
+
+// ─── DELIVERY PAYLOAD (création inline, sans id) ───────────────────────────
+// Analogue à cartItemsToOrderProducts : on construit la livraison
+// directement dans le payload de la commande, sans appel séparé.
+
+export interface DeliveryPayload {
+  costs?:        number;
+  delivery_date: string;   // ISO combiné : date + heure de deliveryTime
+}
+
+/**
+ * Fusionne deliveryDate (Date) et deliveryTime ("HH:mm")
+ * en remplaçant la partie heure de deliveryDate par deliveryTime.
+ *
+ * Exemple :
+ *   deliveryDate = new Date("2025-05-10")
+ *   deliveryTime = "14:00"
+ *   → delivery_date = "2025-05-10T14:00:00.000Z"
+ */
+export function buildDeliveryPayload(
+  date:   Date,
+  time:   string,
+  costs = 0,
+): DeliveryPayload {
+  const [hours, minutes] = time.split(':').map(Number);
+
+  const combined = new Date(date);          // clone pour ne pas muter l'original
+  combined.setHours(hours, minutes, 0, 0);  // ← remplace le time
+
+  return {
+    costs,
+    delivery_date: combined.toISOString(),
+  };
+}
+
 export interface DeliveryOrderItem {
   product_id:     number;
   product_slug:   string;

@@ -29,7 +29,7 @@ const CartSummary = ({totalAmount, itemCount, handleCheckout} : Props) =>{
             
             <View style={[styles.summaryRow, styles.totalRow]}>
                 <Text style={[typography.subtitle1]}>Total</Text>
-                <Text style={[typography.h3]}>{totalAmount.toFixed(2)} €</Text>
+                <Text style={[typography.h3]}>{totalAmount.toFixed(2)} G.</Text>
             </View>
             
             <TouchableOpacity

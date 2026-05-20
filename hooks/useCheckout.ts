@@ -16,7 +16,7 @@ import { customersService } from '@/src/api/services/customers.services';
 import { SyncService } from '@/src/api/services/sync.service';
 import { extractApiError } from '@/src/api/client';
 import { CustomerStorage, PhoneContacts } from '@/utils/customerStorage';
-import type { Customer, OfflineOrder, CartItem, Order } from '@/src/@types/models';
+import { Customer, OfflineOrder, CartItem, Order, DeliveryPayload, buildDeliveryPayload } from '@/src/@types/models';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -253,6 +253,9 @@ export function useCheckout(): UseCheckoutReturn {
 
     setIsPlacing(true);
 
+    const deliveryPayload = buildDeliveryPayload(deliveryDate, deliveryTime);
+
+
     // ── Mode online ────────────────────────────────────────────────────────
     if (apiOk && shopId) {
 
@@ -289,6 +292,7 @@ export function useCheckout(): UseCheckoutReturn {
           account:            backendAccountId,
           order_amount:       computedTotal,
           total_amount_order: computedTotal,
+          delivery: deliveryPayload,
           reference_order:    generateOrderReference(),
           secure_key:         generateSecureKey(),
           has_delivery:       false,
@@ -336,6 +340,7 @@ export function useCheckout(): UseCheckoutReturn {
       account:            backendAccountId, // ID numérique backend (pas l'UUID local)
       order_amount:       computedTotal,
       total_amount_order: computedTotal,
+      delivery: deliveryPayload,
       reference_order:    generateOrderReference(),
       secure_key:         generateSecureKey(),
       has_delivery:       false,

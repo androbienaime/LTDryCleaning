@@ -337,6 +337,7 @@ const CheckoutScreen = ({ navigation }: Props) => {
   // ── Rendu step "summary" ─────────────────────────────────────────────────────
 
   const renderSummaryStep = () => (
+    
     <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
 
       {/* Client */}
