@@ -5,7 +5,8 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ProfileStackParamList } from "@/src/@types/navigation";
-
+import { useAppSetup } from "@/context/AppSetupContext";
+import { useAuth } from "@/context/AuthContext";
 
 type Props = {
   icon: React.ReactNode;
@@ -31,9 +32,16 @@ const Card = ({ icon, title, subtitle, color, onPress }: Props) => {
 
 const ProfileScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
+  const { setupConfig } = useAppSetup();
+  const { isSuperAdmin } = useAuth();
+
 
   const handleAccountManagement = () => {
     navigation.navigate("AccountManagement");
+  };
+
+  const handleSystemSettings = () => {
+      navigation.navigate('Settings')
   };
 
   const handleOrderHistory = () => {
@@ -46,11 +54,16 @@ const ProfileScreen = () => {
     >
 
       {/* Cards */}
-      <Card
-        title="PARAMÈTRES SYSTÈME GLOBALES"
-        color={["#00c6ff", "#0072ff"]}
-        icon={<Ionicons name="settings" size={28} color="#fff" />}
-      />
+      { isSuperAdmin(setupConfig.shopId ?? '') ? (
+        <Card
+          onPress={handleSystemSettings}
+          title="PARAMÈTRES SYSTÈME GLOBALES"
+          color={["#00c6ff", "#0072ff"]}
+          icon={<Ionicons name="settings" size={28} color="#fff" />}
+        />
+      ) : (
+        <></>
+      )}
 
       <Card
         onPress = {handleAccountManagement}

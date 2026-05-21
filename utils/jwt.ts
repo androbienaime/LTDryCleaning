@@ -58,9 +58,7 @@ function decodeJwtPayload(token: string): Record<string, any> | null {
 export function extractIsSuperAdmin(token: string): boolean {
 
   const payload = jwtDecode<JWTPayload>(token);
-
-      console.log('JWT Payload:', payload.is_super_admin); // Debug : vérifier le contenu du payload
-
+  
   return payload?.is_super_admin === true;
 }
  

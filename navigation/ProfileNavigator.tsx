@@ -6,6 +6,7 @@ import ProfileScreen from '../screens/profile/ProfileScreen';
 import OrderHistoryScreen from '../screens/profile/OrderHistoryScreen';
 import AccountManagementScreen from '../screens/profile/AccountManagementScreen';
 import LoginScreen from '@/screens/auth/LoginScreen';
+import SystemSettingsScreen from '@/screens/config/Systemsettingsscreen';
 // import OrderDetailsScreen from '../screens/profile/OrderDetailsScreen';
 // import EditProfileScreen from '../screens/profile/EditProfileScreen';
 // import AddressBookScreen from '../screens/profile/AddressBookScreen';
@@ -28,6 +29,7 @@ const ProfileStackNavigator: React.FC = () => {
       <ProfileStack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Mon Profil' }} />
       <ProfileStack.Screen name="AccountManagement" component={AccountManagementScreen} options={{ title: 'Gestion des comptes' }} />
       <ProfileStack.Screen name="OrderHistory" component={OrderHistoryScreen} options={{ headerBackVisible: true }} />
+      <ProfileStack.Screen name="Settings" component={SystemSettingsScreen} options={{ headerBackVisible: true }} />
 
       {/* <ProfileStack.Screen 
         name="OrderDetails" 

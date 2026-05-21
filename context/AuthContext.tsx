@@ -2,7 +2,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { useMultiAccount } from '@/context/MultiAccountContext';
 import { MultiAccountStorage } from '@/utils/multiAccountStorage';
-import { extractPermissions } from '@/utils/jwt';
+import { extractIsSuperAdmin, extractPermissions } from '@/utils/jwt';
 import { AccountUser, SavedAccount } from '@/src/@types/models';
 import { authService } from '@/src/api/services/auth.service';
 import { storage } from '@/utils/storage';
@@ -33,6 +33,7 @@ type AuthContextType = {
    * hasPermission(shop.id, 'product.create')
    */
   hasPermission: (shopId: string | number, permission: string) => boolean;
+  isSuperAdmin: (shopId : string | number) => boolean;
   clearError: () => void;
 };
 
@@ -49,6 +50,7 @@ const AuthContext = createContext<AuthContextType>({
   forgotPassword: async () => {},
   updateProfile: async () => {},
   hasPermission: () => false,
+  isSuperAdmin: () => false,
   clearError: () => {},
 });
 
@@ -258,6 +260,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return perms.includes(permission);
   };
 
+  const isSuperAdmin = (): boolean => {
+    const token = activeAccount?.token;
+    if (!token) return false;
+    return extractIsSuperAdmin(token);
+  };
+
   const clearError = () => setError(null);
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -275,6 +283,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         forgotPassword,
         updateProfile,
         hasPermission,
+        isSuperAdmin,
         clearError,
       }}
     >

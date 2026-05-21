@@ -17,6 +17,7 @@ import { useMultiAccount } from "@/context/MultiAccountContext";
 import { customersService } from "@/src/api/services/customers.services";
 import { Customer } from "@/src/@types/models";
 import { useAuth } from "@/context/AuthContext";
+import { useAppSetup } from "@/context/AppSetupContext";
 
 //  export const resetStorage = async () => {
 //   await AsyncStorage.clear();
@@ -32,7 +33,7 @@ const HomeScreen = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [globalLoading, setGlobalLoading] = useState(false);
   const { hasPermission } = useAuth();
-  const { activeAccount }  = useMultiAccount();
+  const { setupConfig } = useAppSetup();
 
 
   const onRefresh = useCallback(() => {
@@ -54,7 +55,7 @@ const HomeScreen = () => {
     setGlobalLoading(false);
   }, []);
 
-  const shopId: string = activeAccount?.user?.shop?.[0]?.id ?? '';
+  const shopId: string = setupConfig.shopId || '';
 
   return (
     <LoadingProvider>
