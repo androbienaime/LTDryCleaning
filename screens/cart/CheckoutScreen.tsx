@@ -13,6 +13,7 @@ import { useThemeColors, useThemeTypography } from '@/theme';
 import { useCheckout, CheckoutStep } from '@/hooks/useCheckout';
 import { useCart } from '@/context/CartContext';
 import type { Customer } from '@/src/@types/models';
+import PaymentPanel from './Paymentpanel';
 
 type Props = { navigation: NativeStackNavigationProp<any> };
 
@@ -72,6 +73,7 @@ const CheckoutScreen = ({ navigation }: Props) => {
     deliveryTime, setDeliveryTime,
     note, setNote,
     isPlacing, placeOrder,
+    setPaymentData,
     canProceed, errors,
   } = useCheckout();
 
@@ -374,6 +376,11 @@ const CheckoutScreen = ({ navigation }: Props) => {
           <Text style={styles.summaryTotalAmount}>{totalAmount.toLocaleString()}</Text>
         </View>
       </View>
+
+      <PaymentPanel
+        subtotal={totalAmount}
+        onChange={setPaymentData}
+      />
     </ScrollView>
   );
 
@@ -431,6 +438,7 @@ const CheckoutScreen = ({ navigation }: Props) => {
         ))}
       </View>
 
+      
       {/* Contenu */}
       <View style={{ flex: 1 }}>
         {step === 'customer' && renderCustomerStep()}

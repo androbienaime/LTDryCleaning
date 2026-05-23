@@ -139,9 +139,10 @@ export interface Order {
 
   // Relations
   customer?: number;
-  currency: number;
+  currency: number |string;
   account?: number | null;
   merchant?: number | null;
+  shop?: string | Shop | null,
   coupon?: number | null;
   delivery?: Delivery | DeliveryPayload | null;
 
@@ -149,7 +150,7 @@ export interface Order {
   order_products: ReturnType <typeof cartItemsToOrderProducts>;
 
   // Amounts
-  order_amount?: number;
+  order_amount: number;
   total_amount_order: number;
   balance?: number;
   total_discount?: number;
@@ -163,7 +164,8 @@ export interface Order {
   status?: OrderStatus;
   shipping_address?: Address;
   billing_address?: Address;
-  payment_method?: PaymentMethod;
+  payment_method?: string | PaymentMethod;
+  has_advance : boolean;
 
   // Dates
   created_at?: string;
@@ -213,6 +215,7 @@ export interface Customer {
   phone:        string;           // seul champ obligatoire
   email?:       string;
   address?:     string;
+  shop?: string | Shop | null;
   note?:        string;
   savedToContacts?: boolean;
   contactId?:   string;
@@ -443,3 +446,19 @@ export type MultiAccountStore = {
   accounts: SavedAccount[];
   activeAccountId: string | null;
 };
+
+export type PaymentMethodType = 'cash' | 'card';
+ 
+export interface OrderPaymentPayload {
+  payment_method : PaymentMethodType;
+  amount_paid    : number;   // 0 = pas de paiement immédiat
+  discount       : number;   // réduction fixe
+}
+ 
+export interface OrderFinancialSummary {
+  subtotal    : number;
+  discount    : number;
+  total_net   : number;
+  amount_paid : number;
+  balance     : number;
+}

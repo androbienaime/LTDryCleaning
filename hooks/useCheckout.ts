@@ -1,5 +1,4 @@
 // hooks/useCheckout.ts
-
 import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCart } from '@/context/CartContext';
@@ -16,7 +15,12 @@ import { customersService } from '@/src/api/services/customers.services';
 import { SyncService } from '@/src/api/services/sync.service';
 import { extractApiError } from '@/src/api/client';
 import { CustomerStorage, PhoneContacts } from '@/utils/customerStorage';
-import { Customer, OfflineOrder, CartItem, Order, DeliveryPayload, buildDeliveryPayload } from '@/src/@types/models';
+import {
+  Customer, OfflineOrder, CartItem, Order,
+  buildDeliveryPayload,
+  OrderPaymentPayload, OrderFinancialSummary,
+} from '@/src/@types/models';
+import { useAppSetup } from '@/context/AppSetupContext';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -32,63 +36,79 @@ function generateLocalId(): string {
 export type CheckoutStep = 'customer' | 'date' | 'summary';
 
 export type PlaceOrderResult = {
-  success:   boolean;
-  isOffline: boolean;
-  orderId?:  string | number;
-  message:   string;
+  success       : boolean;
+  isOffline     : boolean;
+  orderId?      : string | number;
+  message       : string;
+  total         : number;
+  discount      : number;
+  amountPaid    : number;
+  balance       : number;
+  paymentMethod : OrderPaymentPayload['payment_method'];
+  hasAdvance    : boolean;
 };
 
 export type UseCheckoutReturn = {
-  step:     CheckoutStep;
-  setStep:  (s: CheckoutStep) => void;
+  // ── Step ──
+  step    : CheckoutStep;
+  setStep : (s: CheckoutStep) => void;
 
-  customers:           Customer[];
-  phoneContacts:       Customer[];
-  contactsLoading:     boolean;
-  selectedCustomer:    Customer | null;
-  selectCustomer:      (c: Customer) => void;
-  newCustomer:         Partial<Customer>;
-  setNewCustomerField: (field: keyof Customer, value: string) => void;
-  saveNewCustomer:     (saveToPhone?: boolean) => Promise<Customer | null>;
-  searchContacts:      (query: string) => void;
-  contactSearch:       string;
-  filteredContacts:    Customer[];
-
-  deliveryDate:    Date;
-  setDeliveryDate: (d: Date) => void;
-  deliveryTime:    string;
-  setDeliveryTime: (t: string) => void;
-
-  note:    string;
-  setNote: (n: string) => void;
-
+  // ── Panier (ré-exposé pour que CheckoutScreen n'importe pas useCart) ──
+  cartItems    : CartItem[];
   computedTotal: number;
   isCalculating: boolean;
-  recalculate:   () => Promise<void>;
+  recalculate  : () => Promise<void>;
 
-  isPlacing:     boolean;
-  placeOrder:    () => Promise<PlaceOrderResult>;
-  offlineOrders: OfflineOrder[];
-  syncPending:   () => Promise<void>;
-  isSyncing:     boolean;
+  // ── Customers ──
+  customers           : Customer[];
+  filteredContacts    : Customer[];
+  phoneContacts       : Customer[];
+  contactsLoading     : boolean;
+  selectedCustomer    : Customer | null;
+  selectCustomer      : (c: Customer) => void;
+  newCustomer         : Partial<Customer>;
+  setNewCustomerField : (field: keyof Customer, value: string) => void;
+  saveNewCustomer     : (saveToPhone?: boolean) => Promise<Customer | null>;
+  searchContacts      : (query: string) => void;
+  contactSearch       : string;
+  errors              : Record<string, string>;
 
-  canProceed: boolean;
-  errors:     Record<string, string>;
+  // ── Livraison ──
+  deliveryDate    : Date;
+  setDeliveryDate : (d: Date) => void;
+  deliveryTime    : string;
+  setDeliveryTime : (t: string) => void;
+
+  // ── Note ──
+  note    : string;
+  setNote : (n: string) => void;
+
+  // ── Paiement ──
+  paymentPayload   : OrderPaymentPayload;
+  financialSummary : OrderFinancialSummary | null;
+  setPaymentData   : (p: OrderPaymentPayload, s: OrderFinancialSummary) => void;
+
+  // ── Commande ──
+  isPlacing     : boolean;
+  placeOrder    : () => Promise<PlaceOrderResult>;
+  offlineOrders : OfflineOrder[];
+  syncPending   : () => Promise<void>;
+  isSyncing     : boolean;
+  canProceed    : boolean;
 };
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useCheckout(): UseCheckoutReturn {
-  const { cartItems, totalAmount, clearCart } = useCart();
-  const { activeAccount }                     = useMultiAccount();
-  const { apiStatus }                         = useProducts();
+  const { cartItems, clearCart }   = useCart();
+  const { activeAccount }          = useMultiAccount();
+  const { apiStatus }              = useProducts();
+  const { setupConfig }            = useAppSetup();
 
-  // accountId        → UUID local (clé AsyncStorage)
-  // backendAccountId → ID numérique du compte dans la BDD (envoyé à l'API)
-  const accountId        = activeAccount?.id             ?? '';
-  const backendAccountId = activeAccount?.user?.id       ?? null;
-  const shopId           = activeAccount?.user?.shop?.[0]?.id ?? '';
-  const currencyId       = 3; // activeAccount?.user?.shop?.[0]?.currency?.id ?? 3
+  const accountId        = activeAccount?.id       ?? '';
+  const backendAccountId = activeAccount?.user?.id ?? null;
+  const shopId           = setupConfig.shopId             ?? '';
+  const currencyId       = setupConfig.currency?.iso_code ?? 'HTG';
   const apiOk            = apiStatus !== 'offline';
 
   // ── Step ──────────────────────────────────────────────────────────────────
@@ -98,13 +118,13 @@ export function useCheckout(): UseCheckoutReturn {
   // ── Customers ─────────────────────────────────────────────────────────────
 
   const [customers,        setCustomers]        = useState<Customer[]>([]);
-  const [phoneContacts,    setPhoneContacts]    = useState<Customer[]>([]);
+  const [phoneContacts,    setPhoneContacts]     = useState<Customer[]>([]);
   const [contactsLoading,  setContactsLoading]  = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [newCustomer,      setNewCustomer]      = useState<Partial<Customer>>({});
-  const [contactSearch,    setContactSearch]    = useState('');
-  const [filteredContacts, setFilteredContacts] = useState<Customer[]>([]);
-  const [errors,           setErrors]           = useState<Record<string, string>>({});
+  const [newCustomer,      setNewCustomer]       = useState<Partial<Customer>>({});
+  const [contactSearch,    setContactSearch]     = useState('');
+  const [filteredContacts, setFilteredContacts]  = useState<Customer[]>([]);
+  const [errors,           setErrors]            = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!accountId) return;
@@ -115,7 +135,8 @@ export function useCheckout(): UseCheckoutReturn {
       .finally(() => setContactsLoading(false));
   }, [accountId]);
 
-  const selectCustomer = (c: Customer) => setSelectedCustomer(c);
+  const selectCustomer = (c: Customer) =>
+    setSelectedCustomer({ ...c, shop: shopId });
 
   const setNewCustomerField = (field: keyof Customer, value: string) => {
     setNewCustomer((prev) => ({ ...prev, [field]: value }));
@@ -126,7 +147,7 @@ export function useCheckout(): UseCheckoutReturn {
     if (!newCustomer.name || !newCustomer.phone) {
       setErrors((prev) => ({
         ...prev,
-        ...(!newCustomer.name  ? { name:  'Le nom est requis' }  : {}),
+        ...(!newCustomer.name  ? { name:  'Le nom est requis' }       : {}),
         ...(!newCustomer.phone ? { phone: 'Le téléphone est requis' } : {}),
       }));
       return null;
@@ -136,7 +157,7 @@ export function useCheckout(): UseCheckoutReturn {
     if (saveToPhone) {
       contactId = await PhoneContacts.saveToContacts({
         ...newCustomer as Customer,
-        firstname: newCustomer.firstname ?? newCustomer.name.split(' ')[0]          ?? '',
+        firstname: newCustomer.firstname ?? newCustomer.name.split(' ')[0]           ?? '',
         lastname:  newCustomer.lastname  ?? newCustomer.name.split(' ').slice(-1)[0] ?? '',
       });
     }
@@ -149,7 +170,9 @@ export function useCheckout(): UseCheckoutReturn {
 
     setCustomers((prev) => {
       const idx = prev.findIndex((c) => c.id === saved.id);
-      return idx >= 0 ? prev.map((c) => (c.id === saved.id ? saved : c)) : [...prev, saved];
+      return idx >= 0
+        ? prev.map((c) => (c.id === saved.id ? saved : c))
+        : [...prev, saved];
     });
     setSelectedCustomer(saved);
     setNewCustomer({});
@@ -171,7 +194,7 @@ export function useCheckout(): UseCheckoutReturn {
     );
   }, [phoneContacts]);
 
-  // ── Date ──────────────────────────────────────────────────────────────────
+  // ── Livraison ─────────────────────────────────────────────────────────────
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -184,7 +207,7 @@ export function useCheckout(): UseCheckoutReturn {
 
   // ── Total calculé ─────────────────────────────────────────────────────────
 
-  const [computedTotal, setComputedTotal] = useState<number>(totalAmount);
+  const [computedTotal, setComputedTotal] = useState<number>(0);
   const [isCalculating, setIsCalculating] = useState(false);
 
   const recalculate = useCallback(async () => {
@@ -194,11 +217,10 @@ export function useCheckout(): UseCheckoutReturn {
     const localTotal = cartItems.reduce((sum, item) => sum + itemSubTotal(item), 0);
     setComputedTotal(localTotal);
 
-    // Recalcul serveur si online (peut inclure coupons, livraison, etc.)
+    // Recalcul serveur si online
     if (!apiOk || !shopId) return;
     setIsCalculating(true);
     try {
-      console.log("[useCheckout] CartItems : ", cartItems[0].Declination?.id);
       const serverTotal = await ordersService.calculateTotal(shopId, {
         order_products: cartItems.map((item: CartItem) => ({
           product:        item.product.slug,
@@ -209,18 +231,33 @@ export function useCheckout(): UseCheckoutReturn {
       });
       setComputedTotal(serverTotal);
     } catch (e) {
-      console.warn('[useCheckout] calculateTotal échec, total local conservé', e);
-        const apiError = extractApiError(e);
-        console.warn('  message :', apiError.message);
-        console.warn('  errors  :', JSON.stringify(apiError.errors, null, 2));
-        console.warn('  status  :', apiError.status);
-        console.warn('  raw     :', JSON.stringify(apiError.raw, null, 2));
+      const apiError = extractApiError(e);
+      console.warn('[useCheckout] calculateTotal échec, total local conservé');
+      console.warn('  message :', apiError.message);
+      console.warn('  errors  :', JSON.stringify(apiError.errors, null, 2));
     } finally {
       setIsCalculating(false);
     }
   }, [apiOk, cartItems, currencyId, shopId]);
 
   useEffect(() => { recalculate(); }, [cartItems.length, apiOk]);
+
+  // ── Paiement ──────────────────────────────────────────────────────────────
+
+  const [paymentPayload, setPaymentPayload] = useState<OrderPaymentPayload>({
+    payment_method : 'cash',
+    amount_paid    : 0,
+    discount       : 0,
+  });
+  const [financialSummary, setFinancialSummary] = useState<OrderFinancialSummary | null>(null);
+
+  const setPaymentData = useCallback(
+    (p: OrderPaymentPayload, s: OrderFinancialSummary) => {
+      setPaymentPayload(p);
+      setFinancialSummary(s);
+    },
+    []
+  );
 
   // ── Commandes offline ──────────────────────────────────────────────────────
 
@@ -243,67 +280,70 @@ export function useCheckout(): UseCheckoutReturn {
   // ── Passer la commande ─────────────────────────────────────────────────────
 
   const placeOrder = async (): Promise<PlaceOrderResult> => {
-    if (!canProceed) {
-      return {
-        success:   false,
-        isOffline: false,
-        message:   'Veuillez sélectionner un client et ajouter des produits.',
-      };
-    }
+    const failResult: PlaceOrderResult = {
+      success: false, isOffline: false,
+      message: 'Veuillez sélectionner un client et ajouter des produits.',
+      total: computedTotal, discount: 0, amountPaid: 0,
+      balance: computedTotal, paymentMethod: 'cash', hasAdvance: false,
+    };
+
+    if (!canProceed) return failResult;
 
     setIsPlacing(true);
 
-    const deliveryPayload = buildDeliveryPayload(deliveryDate, deliveryTime);
+    // ── Valeurs financières ────────────────────────────────────────────────
+    const discount   = paymentPayload.discount;
+    const totalNet   = financialSummary?.total_net   ?? (computedTotal - discount);
+    const amountPaid = paymentPayload.amount_paid;
+    const balance    = financialSummary?.balance     ?? (totalNet - amountPaid);
+    const hasAdvance = amountPaid > 0 && amountPaid < totalNet;
 
+    const deliveryPayload  = buildDeliveryPayload(deliveryDate, deliveryTime);
+
+    const paymentResult = {
+      total: totalNet, discount, amountPaid, balance,
+      paymentMethod: paymentPayload.payment_method, hasAdvance,
+    };
 
     // ── Mode online ────────────────────────────────────────────────────────
     if (apiOk && shopId) {
-
-      // Posé dès que createOrder réussit.
-      // Si non-null → on retourne success online même si clearCart échoue après.
       let onlineOrderId: number | string | null = null;
 
       try {
-        // 1. Résoudre le customer (cherche par téléphone, crée si absent)
         const backendCustomer = await customersService.findOrCreate(
-          shopId,
-          selectedCustomer!
+          shopId, selectedCustomer!
         );
 
         if (!backendCustomer?.id) {
           throw new Error('Impossible de résoudre le client (ID manquant)');
         }
 
-        // Synchroniser l'ID backend localement (non bloquant)
+        // Sync locale silencieuse
         CustomerStorage.save(accountId, {
-          ...selectedCustomer!,
-          id: backendCustomer.id,
-        }).then((savedLocal) => {
-          setSelectedCustomer(savedLocal);
-          setCustomers((prev) =>
-            prev.map((c) => (c.phone === savedLocal.phone ? savedLocal : c))
-          );
+          ...selectedCustomer!, id: backendCustomer.id,
+        }).then((saved) => {
+          setSelectedCustomer(saved);
+          setCustomers((prev) => prev.map((c) => (c.phone === saved.phone ? saved : c)));
         }).catch(() => {});
 
-        // 2. Construire et envoyer la commande
         const orderPayload: Order = {
-          customer:           Number(backendCustomer.id),
-          currency:           currencyId,
-          account:            backendAccountId,
-          order_amount:       computedTotal,
-          total_amount_order: computedTotal,
-          delivery: deliveryPayload,
-          reference_order:    generateOrderReference(),
-          secure_key:         generateSecureKey(),
-          has_delivery:       false,
-          balance:            0,
-          total_discount:     0,
-          order_products:     cartItemsToOrderProducts(cartItems),
+          customer           : Number(backendCustomer.id),
+          currency           : currencyId,
+          account            : backendAccountId,
+          order_amount       : amountPaid,
+          total_amount_order : totalNet,
+          total_discount     : discount,
+          balance,
+          has_advance        : hasAdvance,
+          payment_method     : paymentPayload.payment_method,
+          delivery           : deliveryPayload,
+          reference_order    : generateOrderReference(),
+          secure_key         : generateSecureKey(),
+          has_delivery       : false,
+          order_products     : cartItemsToOrderProducts(cartItems),
         };
 
         const created = await ordersService.createOrder(shopId, orderPayload);
-
-        // ✅ Commande confirmée — verrouille le succès
         onlineOrderId = created.id ?? null;
 
       } catch (e: any) {
@@ -312,78 +352,73 @@ export function useCheckout(): UseCheckoutReturn {
         console.warn('  message :', apiError.message);
         console.warn('  errors  :', JSON.stringify(apiError.errors, null, 2));
         console.warn('  status  :', apiError.status);
-        console.warn('  raw     :', JSON.stringify(apiError.raw, null, 2));
       }
 
-      // Commande créée en ligne → succès garanti
       if (onlineOrderId !== null) {
         try { await clearCart(); } catch (e) {
           console.warn('[useCheckout] clearCart échoué (commande déjà créée) :', e);
         }
         setIsPlacing(false);
         return {
-          success:   true,
-          isOffline: false,
-          orderId:   onlineOrderId,
-          message:   'Commande passée avec succès !',
+          success: true, isOffline: false,
+          orderId: onlineOrderId,
+          message: 'Commande passée avec succès !',
+          ...paymentResult,
         };
       }
-
-      // onlineOrderId === null → erreur avant/pendant createOrder → fallback offline
     }
 
-    // ── Mode offline (pas de réseau OU erreur API avant création) ──────────
-    // Même shape que Order + metadata + _customer pour findOrCreate à la sync
+    // ── Mode offline ───────────────────────────────────────────────────────
     const offline: OfflineOrder = {
-      // Champs Order — identiques au payload online
-      currency:           currencyId,
-      account:            backendAccountId, // ID numérique backend (pas l'UUID local)
-      order_amount:       computedTotal,
-      total_amount_order: computedTotal,
-      delivery: deliveryPayload,
-      reference_order:    generateOrderReference(),
-      secure_key:         generateSecureKey(),
-      has_delivery:       false,
-      balance:            0,
-      total_discount:     0,
-      order_products:     cartItemsToOrderProducts(cartItems),
-      // Metadata offline
-      _customer:          selectedCustomer!,
-      localId:            generateLocalId(),
-      status:             'pending_sync',
-      createdAt:          Date.now(),
-      syncAttempts:       0,
+      currency           : currencyId,
+      account            : backendAccountId,
+      order_amount       : amountPaid,
+      total_amount_order : totalNet,
+      total_discount     : discount,
+      balance,
+      has_advance        : hasAdvance,
+      payment_method     : paymentPayload.payment_method,
+      delivery           : deliveryPayload,
+      reference_order    : generateOrderReference(),
+      secure_key         : generateSecureKey(),
+      has_delivery       : false,
+      order_products     : cartItemsToOrderProducts(cartItems),
+      _customer          : selectedCustomer!,
+      localId            : generateLocalId(),
+      status             : 'pending_sync',
+      createdAt          : Date.now(),
+      syncAttempts       : 0,
     };
 
     const existing = await AsyncStorage.getItem(OFFLINE_ORDERS_KEY(accountId))
       .then((r) => (r ? JSON.parse(r) : []))
       .catch(() => []);
 
-    const newList = [...existing, offline];
-    await AsyncStorage.setItem(OFFLINE_ORDERS_KEY(accountId), JSON.stringify(newList));
-    setOfflineOrders(newList);
+    await AsyncStorage.setItem(
+      OFFLINE_ORDERS_KEY(accountId),
+      JSON.stringify([...existing, offline])
+    );
+    setOfflineOrders([...existing, offline]);
 
     try { await clearCart(); } catch {}
     setIsPlacing(false);
 
     return {
-      success:   true,
-      isOffline: true,
-      orderId:   offline.localId,
-      message:   'Commande enregistrée — sera envoyée à la reconnexion.',
+      success: true, isOffline: true,
+      orderId: offline.localId,
+      message: 'Commande enregistrée — sera envoyée à la reconnexion.',
+      ...paymentResult,
     };
   };
 
   // ── Sync manuelle ──────────────────────────────────────────────────────────
-  // La sync automatique (NetInfo) est gérée par SyncService.startListening()
-  // → à appeler UNE SEULE FOIS dans App.tsx
 
   const syncPending = async (): Promise<void> => {
     if (isSyncing) return;
     setIsSyncing(true);
     try {
       await SyncService.syncAll();
-      await reloadOfflineOrders(); // rafraîchit l'UI avec les statuts mis à jour
+      await reloadOfflineOrders();
     } finally {
       setIsSyncing(false);
     }
@@ -396,18 +431,27 @@ export function useCheckout(): UseCheckoutReturn {
     !!(selectedCustomer?.name ?? selectedCustomer?.firstname) &&
     cartItems.length > 0;
 
+  // ── Retour ────────────────────────────────────────────────────────────────
+
   return {
     step, setStep,
-    customers, phoneContacts, contactsLoading,
+    // Panier ré-exposé → CheckoutScreen n'importe plus useCart
+    cartItems, computedTotal, isCalculating, recalculate,
+    // Customers
+    customers, filteredContacts, phoneContacts, contactsLoading,
     selectedCustomer, selectCustomer,
     newCustomer, setNewCustomerField, saveNewCustomer,
-    searchContacts, contactSearch, filteredContacts,
+    searchContacts, contactSearch, errors,
+    // Livraison
     deliveryDate, setDeliveryDate,
     deliveryTime, setDeliveryTime,
+    // Note
     note, setNote,
-    computedTotal, isCalculating, recalculate,
+    // Paiement
+    paymentPayload, financialSummary, setPaymentData,
+    // Commande
     isPlacing, placeOrder,
     offlineOrders, syncPending, isSyncing,
-    canProceed, errors,
+    canProceed,
   };
 }

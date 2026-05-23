@@ -14,7 +14,7 @@ import { AccountUser } from '@/src/@types/models';
 import { authService } from '@/src/api/services/auth.service';
 import { refresh } from '@react-native-community/netinfo';
 import { extractApiError } from '@/src/api/client';
-import { useOffline } from './OfflineContext';
+import NetInfo from '@react-native-community/netinfo';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type MultiAccountContextType = {
@@ -88,7 +88,6 @@ export const MultiAccountProvider: React.FC<{ children: React.ReactNode }> = ({
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-    const { isOnline } = useOffline();
 
 
   // ── Charger le store au démarrage ──────────────────────────────────────────
@@ -196,6 +195,9 @@ const switchToAccount = async (accountId: string) => {
   
   
   const RefreshToken = async(accountId: string, token1 : string, refreshToken : string | undefined) => {
+
+    const netState = await NetInfo.fetch();
+    const isOnline = netState.isConnected && netState.isInternetReachable;
 
     // const { isOnline } = useOffline();
      // 2. Écrire les tokens sauvegardés de ce compte

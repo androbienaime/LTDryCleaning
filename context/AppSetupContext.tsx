@@ -24,14 +24,14 @@ const AppSetupContext = createContext<AppSetupContextType>({
 
 export const useAppSetup = () => useContext(AppSetupContext);
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
+{/* ─── Provider ───────────────────────────────────────────────────────────────── */}
 
 export const AppSetupProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isSetupComplete, setIsSetupComplete] = useState(false);
   const [isCheckingSetup, setIsCheckingSetup] = useState(true);
   const [setupConfig, setSetupConfig]         = useState<Partial<SetupConfig>>({});
 
-  // Lecture du storage au montage
+  {/* Lecture du storage au montage */}
   useEffect(() => {
     (async () => {
       const complete = await AppSetup.isComplete();
@@ -44,14 +44,14 @@ export const AppSetupProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     })();
   }, []);
 
-  // Appelé quand le wizard de setup est terminé
+  {/* Appelé quand le wizard de setup est terminé */}
   const completeSetup = async (config: SetupConfig) => {
     await AppSetup.save(config);
     setSetupConfig(config);
     setIsSetupComplete(true);
   };
 
-  // Factory reset (menu admin)
+  {/* Factory reset (menu admin) */}
   const resetSetup = async () => {
     await AppSetup.reset();
     setSetupConfig({});

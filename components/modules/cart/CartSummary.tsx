@@ -1,3 +1,4 @@
+import { useAppSetup } from "@/context/AppSetupContext";
 import { useThemeColors, useThemeTypography } from "@/theme";
 import React, { useMemo } from "react";
 import { StyleSheet } from "react-native";
@@ -11,6 +12,8 @@ type Props = {
 
 
 const CartSummary = ({totalAmount, itemCount, handleCheckout} : Props) =>{
+    const { setupConfig } = useAppSetup();
+
     const colors = useThemeColors();
     const typography = useThemeTypography();
     const styles = useMemo(() => createStyles(colors), [colors]);
@@ -19,7 +22,7 @@ const CartSummary = ({totalAmount, itemCount, handleCheckout} : Props) =>{
         <View style={[styles.summaryContainer, { borderTopColor: colors.border.default }]}>
             <View style={styles.summaryRow}>
                 <Text style={[typography.body1, { color: colors.text.secondary }]}>Sous-total ({itemCount} articles)</Text>
-                <Text style={[typography.h3]}>{totalAmount.toFixed(2)} €</Text>
+                <Text style={[typography.h3]}>{totalAmount.toFixed(2)} {setupConfig.currency?.symbol} </Text>
             </View>
             
             <View style={styles.summaryRow}>
@@ -29,7 +32,7 @@ const CartSummary = ({totalAmount, itemCount, handleCheckout} : Props) =>{
             
             <View style={[styles.summaryRow, styles.totalRow]}>
                 <Text style={[typography.subtitle1]}>Total</Text>
-                <Text style={[typography.h3]}>{totalAmount.toFixed(2)} G.</Text>
+                <Text style={[typography.h3]}>{totalAmount.toFixed(2)} {setupConfig.currency?.symbol} </Text>
             </View>
             
             <TouchableOpacity

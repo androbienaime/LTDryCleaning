@@ -13,9 +13,6 @@ import { FlatList } from "react-native";
 import { LoadingProvider } from "@/context/LoadingContext";
 import LoadingOverlay from "@/components/forms/LoadingOverlay";
 import { ProductProvider, useProducts } from "@/context/ProductContext";
-import { useMultiAccount } from "@/context/MultiAccountContext";
-import { customersService } from "@/src/api/services/customers.services";
-import { Customer } from "@/src/@types/models";
 import { useAuth } from "@/context/AuthContext";
 import { useAppSetup } from "@/context/AppSetupContext";
 
