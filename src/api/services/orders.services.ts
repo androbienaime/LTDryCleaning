@@ -1,13 +1,13 @@
 // src/api/services/orders_services.ts
 
 import apiClient from '@/src/api/client';
-import type { ApiResponse, Order, CartItem } from '@/src/@types/models';
+import type { ApiResponse, Order, CartItem, OrderStatus } from '@/src/@types/models';
 
 // ─── Helpers URL ──────────────────────────────────────────────────────────────
 
 const url = {
   orders:   (shopId: string)             => `/shops/${shopId}/orders`,
-  order:    (shopId: string, id: number) => `/shops/${shopId}/orders/${id}`,
+  order:    (shopId: string, id: string | number) => `/shops/${shopId}/orders/${id}`,
   state:    (shopId: string, id: number) => `/shops/${shopId}/orders/${id}/state`,
   subTotal: (shopId: string)             => `/shops/${shopId}/orders/calculate-sub-total`,
   total:    (shopId: string)             => `/shops/${shopId}/orders/calculate-total`,
@@ -65,7 +65,7 @@ export const ordersService = {
     return raw.data ?? [];
   },
 
-  async getOrder(shopId: string, orderId: number): Promise<Order> {
+  async getOrder(shopId: string, orderId: string | number): Promise<Order> {
     const raw = await apiClient.get<ApiResponse<Order>>(url.order(shopId, orderId));
     if (!raw.data) throw new Error('Commande introuvable');
     return raw.data;
@@ -77,11 +77,21 @@ export const ordersService = {
     return raw.data;
   },
 
-  async updateOrder(shopId: string, orderId: number, data: Partial<Order>): Promise<Order> {
+  async updateOrder(shopId: string, orderId: string, data: Partial<Order>): Promise<Order> {
+    // throw new Error("Error : " + JSON.stringify(data));
     const raw = await apiClient.put<ApiResponse<Order>>(url.order(shopId, orderId), data);
     if (!raw.data) throw new Error(raw.message ?? 'Erreur mise à jour commande');
     return raw.data;
   },
+
+  // async updateStatus(shopId: string, orderId: string, data: Partial<OrderStatus>): Promise<OrderStatus> {
+  //   // throw new Error("Error : " + JSON.stringify(data));
+  //   const raw = await apiClient.put<ApiResponse<OrderStatus>>(url.order(shopId, orderId), data);
+  //   if (!raw.data) throw new Error(raw.message ?? 'Erreur mise à jour commande');
+  //   return raw.data;
+  // },
+
+  
 
   async deleteOrder(shopId: string, orderId: number): Promise<void> {
     await apiClient.delete(url.order(shopId, orderId));

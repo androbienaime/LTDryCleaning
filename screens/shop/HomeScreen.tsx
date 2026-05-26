@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+// screens/HomeScreen.tsx
+import React, { useCallback, useState } from "react";
+import { FlatList, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useThemeColors } from "@/theme";
 import { ThemedView } from "@/components/ThemedView";
 import ProductList from "@/components/modules/products/ProductList";
@@ -9,110 +9,106 @@ import CategoriesList from "@/components/modules/categories/CategoriesList";
 import HomeSlider from "@/components/HomeSlider";
 import ProductFeatured from "@/components/modules/products/ProductFeatured";
 import Header from "@/components/Header";
-import { FlatList } from "react-native";
 import { LoadingProvider } from "@/context/LoadingContext";
 import LoadingOverlay from "@/components/forms/LoadingOverlay";
 import { ProductProvider, useProducts } from "@/context/ProductContext";
 import { useAuth } from "@/context/AuthContext";
 import { useAppSetup } from "@/context/AppSetupContext";
 
-//  export const resetStorage = async () => {
-//   await AsyncStorage.clear();
-//   console.log('Storage reset: all data cleared.');
-//   };
+// ─── HomeContent ──────────────────────────────────────────────────────────────
+// Séparé de HomeScreen pour pouvoir accéder à useProducts() qui vit dans
+// ProductProvider. C'est lui qui possède l'unique FlatList scrollable.
 
-const HomeScreen = () => {
-//  resetStorage(); // 🔥 Supprimer ou commenter après test
+const HomeContent = () => {
   const colors = useThemeColors();
 
-  // t
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [globalLoading, setGlobalLoading] = useState(false);
+  // ✅ refreshing et handleRefresh viennent DIRECTEMENT de ProductContext.
+  // Plus de setTimeout fake — le spinner reste jusqu'à la fin du vrai fetch.
+  const { refreshing, handleRefresh } = useProducts();
+
   const { hasPermission } = useAuth();
-  const { setupConfig } = useAppSetup();
+  const { setupConfig }   = useAppSetup();
+  const shopId            = setupConfig.shopId ?? '';
 
+  const [globalLoading,   setGlobalLoading]   = useState(false);
+  // refreshTrigger sert uniquement à signaler à ProductFeatured de se recharger
+  const [refreshTrigger,  setRefreshTrigger]  = useState(0);
 
+  const showGlobalLoading = useCallback(() => setGlobalLoading(true),  []);
+  const hideGlobalLoading = useCallback(() => setGlobalLoading(false), []);
+
+  // ✅ onRefresh : appelle handleRefresh() (vrai reload) + incrémente trigger
   const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setRefreshTrigger(prev => prev + 1); // 🔁 Incrémente pour signaler un refresh
+    handleRefresh();
+    setRefreshTrigger((prev) => prev + 1);
+  }, [handleRefresh]);
 
-    // Simule une requête API ou un rechargement
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 500);
-  }, []);
-  
-  // Méthodes pour contrôler l'overlay de chargement global
-  const showGlobalLoading = useCallback(() => {
-    setGlobalLoading(true);
-  }, []);
+  return (
+    <>
+      <FlatList
+        data={[1]}                         // dummy — le vrai contenu est dans renderItem
+        keyExtractor={() => 'home-section'}
+        // ── Pull-to-refresh ─────────────────────────────────────────────────
+        // refreshing vient de ProductContext : spinner actif pendant le vrai fetch
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        // ── Slider au-dessus du contenu ─────────────────────────────────────
+        ListHeaderComponent={() => (
+          <View>
+            {/* <HomeSlider style={{ marginLeft: 18 }} /> */}
+          </View>
+        )}
+        renderItem={() => (
+          <View>
+            {/* <ProductFeatured
+              refreshTrigger={refreshTrigger}
+              onLoadStart={showGlobalLoading}
+              onLoadEnd={hideGlobalLoading}
+            /> */}
+            {hasPermission(shopId, 'view_any_core::product') ? (
+              <ProductList
+                refreshTrigger={refreshTrigger}
+                globalRefreshing={refreshing}
+                onLoadStart={showGlobalLoading}
+                onLoadEnd={hideGlobalLoading}
+              />
+            ) : (
+              <Text style={[styles.noPermission, { color: colors.text.primary }]}>
+                You don't have permission to view products.
+              </Text>
+            )}
+          </View>
+        )}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 190 }}
+      />
+      {/* <LoadingOverlay visible={globalLoading} /> */}
+    </>
+  );
+};
 
-  const hideGlobalLoading = useCallback(() => {
-    setGlobalLoading(false);
-  }, []);
+// ═══════════════════════════════════════════════════════════════════════════════
+//  HomeScreen
+// ═══════════════════════════════════════════════════════════════════════════════
 
-  const shopId: string = setupConfig.shopId || '';
+const HomeScreen = () => {
+  const colors = useThemeColors();
 
   return (
     <LoadingProvider>
       <SafeAreaView style={{ backgroundColor: colors.background.primary, flex: 1 }}>
-        <ThemedView>
+        <ThemedView style={{ flex: 1 }}>
+
+          {/* ── FIXE — ne scroll pas ──────────────────────────────────────── */}
           <Header />
           {/* <CategoriesList /> */}
+
+          {/* ── SCROLLABLE — ProductProvider doit envelopper HomeContent
+               pour que celui-ci puisse accéder à useProducts() ────────────── */}
           <ProductProvider initialLimit={6}>
-            <FlatList
-              data={[1]} // dummy item
-              keyExtractor={() => "home-section"}
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              renderItem={() => (
-
-                 /*   <View>
-                      <ProductFeatured 
-                    refreshTrigger={refreshTrigger}
-                    onLoadStart={showGlobalLoading}
-                    onLoadEnd={hideGlobalLoading}
-                  /> 
-                </View>
-                */
-
-                <View>
-                  {
-                    hasPermission(shopId, 'view_any_core::product') ? (
-                      <ProductList
-                        refreshTrigger={refreshTrigger}
-                        globalRefreshing={refreshing}
-                        // onLoadStart={showGlobalLoading}
-                        // onLoadEnd={hideGlobalLoading}
-                      />
-                    ) : (
-                      <Text
-                        style={{
-                          color: colors.text.primary,
-                          textAlign: 'center',
-                          marginTop: 20,
-                        }}
-                      >
-                        You don't have permission to view products.
-                      </Text>
-                    )
-                }
-                </View>
-              )}
-              ListHeaderComponent={() => (
-                <View>
-                   {/* <HomeSlider style={{ marginLeft: 18 }} />  */}
-                </View>
-              )}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 190 }} // ajuste selon la tab bar
-            />
+            <HomeContent />
           </ProductProvider>
-          
-          {/* Overlay de chargement global */}
-          {/* <LoadingOverlay visible={globalLoading} /> */}
-          
+
         </ThemedView>
       </SafeAreaView>
     </LoadingProvider>
@@ -120,9 +116,11 @@ const HomeScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
+  noPermission: {
+    textAlign: 'center',
+    marginTop: 20,
     marginHorizontal: 18,
-  }
+  },
 });
 
 export default HomeScreen;

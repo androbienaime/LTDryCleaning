@@ -52,6 +52,8 @@ type MultiAccountContextType = {
   // Y a-t-il au moins un compte avec PIN (pour afficher l'écran PIN au démarrage)
   hasPinAccounts: boolean;
 
+  RefreshToken ?: (accountId: string, token1 : string, refreshToken : string | undefined) => Promise<void>; 
+
   clearError: () => void;
   reload: () => Promise<void>;
 };
@@ -309,6 +311,7 @@ const switchToAccount = async (accountId: string) => {
         hasPinAccounts,
         clearError,
         reload: loadStore,
+        RefreshToken
       }}
     >
       {children}

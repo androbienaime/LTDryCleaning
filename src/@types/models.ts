@@ -339,12 +339,13 @@ export type OfflineDeliveryOrder = DeliveryOrder & {
   }
 
   export enum OrderStatus {
-    PENDING = 'pending',
-    PAID = 'paid',
-    PROCESSING = 'processing',
-    SHIPPED = 'shipped',
-    DELIVERED = 'delivered',
-    CANCELLED = 'cancelled',
+    PENDING = 'PendingState',
+    PAID = 'PaidState',
+    PROCESSING = 'ProcessingState',
+    SHIPPED = 'ShippedState',
+    DELIVERED = 'DeliveredState',
+    CANCELLED = 'CancelledState',
+    RETURNED = 'ReturnedState',
   }
   
   export interface Address {

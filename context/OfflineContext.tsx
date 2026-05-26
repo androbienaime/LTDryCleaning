@@ -86,7 +86,6 @@ export const OfflineProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     const unsub = NetInfo.addEventListener((state) => {
       const online = !!(state.isConnected && state.isInternetReachable);
-      // const online = false;
       setIsOnline(online);
       if (online && accountId) handleSync();
     });

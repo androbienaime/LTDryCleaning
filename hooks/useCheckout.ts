@@ -1,5 +1,5 @@
 // hooks/useCheckout.ts
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, act } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCart } from '@/context/CartContext';
 import { useMultiAccount } from '@/context/MultiAccountContext';
@@ -21,6 +21,7 @@ import {
   OrderPaymentPayload, OrderFinancialSummary,
 } from '@/src/@types/models';
 import { useAppSetup } from '@/context/AppSetupContext';
+import { getTokens } from '@/context/RefreshAccountContext';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -101,7 +102,7 @@ export type UseCheckoutReturn = {
 
 export function useCheckout(): UseCheckoutReturn {
   const { cartItems, clearCart }   = useCart();
-  const { activeAccount }          = useMultiAccount();
+  const { activeAccount, RefreshToken }          = useMultiAccount();
   const { apiStatus }              = useProducts();
   const { setupConfig }            = useAppSetup();
 
@@ -110,7 +111,7 @@ export function useCheckout(): UseCheckoutReturn {
   const shopId           = setupConfig.shopId             ?? '';
   const currencyId       = setupConfig.currency?.iso_code ?? 'HTG';
   const apiOk            = apiStatus !== 'offline';
-
+  
   // ── Step ──────────────────────────────────────────────────────────────────
 
   const [step, setStep] = useState<CheckoutStep>('customer');
@@ -352,6 +353,30 @@ export function useCheckout(): UseCheckoutReturn {
         console.warn('  message :', apiError.message);
         console.warn('  errors  :', JSON.stringify(apiError.errors, null, 2));
         console.warn('  status  :', apiError.status);
+
+        let i =0;
+        // ✅ 1. Vérifier le compte avant tout
+        if (activeAccount?.id) {
+          console.warn("[useCheckout] No active account, skipping refresh.");
+          
+          // ✅ 2. Récupérer les tokens
+          const tokens = await getTokens(String(activeAccount.id));
+
+          // ✅ 3. Vérifier que les tokens existent
+          if (tokens) {
+            console.warn("[useCheckout] No tokens found for account.");
+            
+            // ✅ 4. Utiliser isExpired déjà calculé, pas besoin de rappeler isTokenExpired
+            if (tokens.isExpired) {
+              console.log("[useCheckout] Token expired, regenerating...");
+              await RefreshToken?.(
+                String(activeAccount.id),
+                tokens.token,
+                tokens.refreshToken
+              );
+            }
+          }
+        }
       }
 
       if (onlineOrderId !== null) {

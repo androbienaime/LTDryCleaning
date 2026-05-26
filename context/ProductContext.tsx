@@ -13,6 +13,9 @@ import { productsService } from '@/src/api/services/products.service';
 import { useMultiAccount } from './MultiAccountContext';
 import { useOffline } from './OfflineContext';
 import type { Product, OfflineProduct } from '@/src/@types/models';
+import { extractApiError } from '@/src/api/client';
+import { getTokens } from './RefreshAccountContext';
+import { isTokenExpired } from '@/utils/jwt';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ApiStatus = 'online' | 'offline' | 'unknown';
@@ -51,7 +54,8 @@ export const ProductProvider = ({
   initialLimit    = 2,
   retryIntervalMs = 5000,
 }: ProductProviderProps) => {
-  const { activeAccount }  = useMultiAccount();
+  const { activeAccount, RefreshToken }  = useMultiAccount();
+
   const {
     isOnline,
     cachedProducts,
@@ -147,6 +151,35 @@ export const ProductProvider = ({
           
           }catch(e){
             console.log("ERREUR DE CHARGEMENT DE PROD : ", e);
+            const error = extractApiError(e);
+            console.log("Les erreurs : " + JSON.stringify(error));
+            
+            // ✅ 1. Vérifier le compte avant tout
+            if (!activeAccount?.id) {
+              console.warn("[ProductContext] No active account, skipping refresh.");
+              return;
+            }
+
+
+            // ✅ 2. Récupérer les tokens
+            const tokens = await getTokens(String(activeAccount.id));
+
+            // ✅ 3. Vérifier que les tokens existent
+            if (!tokens) {
+              console.warn("[ProductContext] No tokens found for account.");
+              return;
+            }
+
+            // ✅ 4. Utiliser isExpired déjà calculé, pas besoin de rappeler isTokenExpired
+            if (tokens.isExpired) {
+              console.log("[ProductContext] Token expired, regenerating...");
+              await RefreshToken?.(
+                String(activeAccount.id),
+                tokens.token,
+                tokens.refreshToken
+              );
+            }
+            
           }
         }
 
@@ -302,6 +335,7 @@ export const ProductProvider = ({
     clearRetryTimer();
     setRefreshing(true);
     setLoading(true);
+    setProducts([]);    // ← ✅ vide les produits → skeleton s'affiche
     setHasMore(true);
     setIsFromCache(false);
     loadProducts(1, true);

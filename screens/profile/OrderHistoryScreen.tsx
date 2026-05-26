@@ -4,15 +4,19 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, TextInput, Modal,
   Alert, Animated, Platform, KeyboardAvoidingView,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProducts } from '@/context/ProductContext';
 import { useAppSetup } from '@/context/AppSetupContext';
-import type { OfflineOrder, Order } from '@/src/@types/models';
+import { OfflineOrder, Order, OrderStatus } from '@/src/@types/models';
 import { SyncService, OFFLINE_KEY_PREFIX } from '@/src/api/services/sync.service';
 import { ordersService } from '@/src/api/services/orders.services';
+import { extractApiError } from '@/src/api/client';
+import { useMultiAccount } from '@/context/MultiAccountContext';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Constantes
@@ -23,12 +27,12 @@ const PAGE_SIZE = 20;
 type Tab = 'offline' | 'online';
 
 const ORDER_STATES = [
-  { key: 'pending',    label: 'En attente', color: '#F59E0B', bg: '#FEF3C7', icon: 'time-outline'             },
-  { key: 'processing', label: 'En cours',   color: '#3B82F6', bg: '#EFF6FF', icon: 'refresh-circle-outline'   },
-  { key: 'shipped',    label: 'Expédiée',   color: '#8B5CF6', bg: '#EDE9FE', icon: 'car-outline'              },
-  { key: 'delivered',  label: 'Livrée',     color: '#10B981', bg: '#ECFDF5', icon: 'checkmark-circle-outline' },
-  { key: 'cancelled',  label: 'Annulée',    color: '#EF4444', bg: '#FEF2F2', icon: 'close-circle-outline'     },
-  { key: 'returned',   label: 'Retournée',  color: '#64748B', bg: '#F1F5F9', icon: 'return-down-back-outline' },
+  { key: OrderStatus.PENDING,    label: 'En attente', color: '#F59E0B', bg: '#FEF3C7', icon: 'time-outline'             },
+  { key: OrderStatus.PROCESSING, label: 'En cours',   color: '#3B82F6', bg: '#EFF6FF', icon: 'refresh-circle-outline'   },
+  { key: OrderStatus.SHIPPED,    label: 'Expédiée',   color: '#8B5CF6', bg: '#EDE9FE', icon: 'car-outline'              },
+  { key: OrderStatus.DELIVERED,  label: 'Livrée',     color: '#10B981', bg: '#ECFDF5', icon: 'checkmark-circle-outline' },
+  { key: OrderStatus.CANCELLED,  label: 'Annulée',    color: '#EF4444', bg: '#FEF2F2', icon: 'close-circle-outline'     },
+  { key: OrderStatus.RETURNED,   label: 'Retournée',  color: '#64748B', bg: '#F1F5F9', icon: 'return-down-back-outline' },
 ] as const;
 
 type OrderStateKey = typeof ORDER_STATES[number]['key'];
@@ -202,10 +206,9 @@ const OnlineCard = ({
   onAddAdvance : (order: Order) => void;
 }) => {
   const fmt         = (n?: number) => n != null ? `${n.toLocaleString('fr-FR')} ${symbol}` : '—';
-  const state       = (order as any).state ?? 'pending';
+  const state       = (order as any).state ?? OrderStatus.PENDING;
   const customer    = (order as any).customer;
   const isFullyPaid = (order.balance ?? order.total_amount_order) <= 0;
-
   const customerName  = typeof customer === 'object'
     ? (customer?.name ?? `${customer?.firstname ?? ''} ${customer?.lastname ?? ''}`.trim())
     : '—';
@@ -218,7 +221,7 @@ const OnlineCard = ({
           <Text style={s.cardRef}>#{order.id ?? order.reference_order}</Text>
           <Text style={s.cardDate}>{order.created_at ? fmtDate(order.created_at) : '—'}</Text>
         </View>
-        <StateBadge state={state} type="online" />
+        <StateBadge state={state+"State"} type="online" />
 
         {/* Bouton modifier statut */}
         <TouchableOpacity style={s.actionBtn} onPress={() => onEditStatus(order)} activeOpacity={0.7}>
@@ -272,9 +275,9 @@ const OnlineCard = ({
         <FinRow label="Total net" value={fmt(order.total_amount_order)} bold />
         <View style={s.finDivider} />
         <FinRow label="Méthode" value={(order as any).payment_method === 'card' ? '💳 Carte' : '💵 Espèces'} />
-        {(order.order_amount ?? 0) > 0 && (
-          <FinRow label="Payé" value={fmt(order.order_amount)} color="#059669" />
-        )}
+        {/* {(order.order_amount ?? 0) > 0 && ( */}
+          <FinRow label="Versement" value={fmt(order.order_amount)} color="#059669" />
+        {/* )} */}
         <View style={[s.balanceBox, isFullyPaid && s.balanceBoxPaid]}>
           <Text style={[s.balanceLabel, isFullyPaid && s.balanceLabelPaid]}>
             {isFullyPaid ? '✓ Soldé' : 'Balance restante'}
@@ -292,6 +295,10 @@ const OnlineCard = ({
 //  Modal — Modifier le statut
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Modal — Modifier le statut
+// ═══════════════════════════════════════════════════════════════════════════════
+
 const EditStatusModal = ({
   visible, order, shopId, onClose, onSaved,
 }: {
@@ -301,24 +308,52 @@ const EditStatusModal = ({
   onClose : () => void;
   onSaved : (updated: Order) => void;
 }) => {
-  const [saving,         setSaving]         = useState(false);
-  const [selectedState,  setSelectedState]  = useState<OrderStateKey>('pending');
+  const [saving,        setSaving]        = useState(false);
+  const [selectedState, setSelectedState] = useState<OrderStateKey>(OrderStatus.PENDING);
+  const [reason,        setReason]        = useState('');
+
+  // ✅ Hook appelé au niveau du composant, pas dans handleSave
+  const { activeAccount } = useMultiAccount();
+  const { setupConfig } = useAppSetup();
 
   useEffect(() => {
-    if (order) setSelectedState(((order as any).state ?? 'pending') as OrderStateKey);
+    if (order) {
+      setSelectedState(((order as any).state ?? 'pending') as OrderStateKey);
+      setReason('');
+    }
   }, [order]);
+
+  const needsReason = selectedState === OrderStatus.CANCELLED
+                   || selectedState === OrderStatus.RETURNED;
 
   const handleSave = async () => {
     if (!order || !shopId) return;
     setSaving(true);
     try {
-      const updated = await ordersService.updateOrder(shopId, Number(order.id), {
-        state: selectedState as any,
-      });
+      const updated = await ordersService.changeState(
+        shopId,
+        order.id,
+        selectedState as any,
+        {
+          reason,
+          tracking_number: 'TRACK123456',
+          // ✅ Spread conditionnel correct
+          ...(selectedState === OrderStatus.DELIVERED
+            ? { account_delivered_id: activeAccount?.user.id,
+                currency_id : setupConfig.currency?.iso_code,
+             }
+            : {}),
+          ...(selectedState === OrderStatus.SHIPPED && 
+            { account_shipped_id: activeAccount?.user.id }),
+
+        },
+      );
       onSaved(updated);
       onClose();
     } catch (e: any) {
-      Alert.alert('Erreur', e?.message ?? 'Impossible de modifier le statut.');
+      const error = extractApiError(e);
+      console.log('[OrderHistory] State Update :', JSON.stringify(error));
+      Alert.alert('Erreur', error.message ?? 'Impossible de modifier le statut.');
     } finally {
       setSaving(false);
     }
@@ -326,8 +361,11 @@ const EditStatusModal = ({
 
   if (!order) return null;
 
+  const reasonState = ORDER_STATES.find((s) => s.key === selectedState);
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={s.modalOverlay}>
         <View style={s.modalSheet}>
           <View style={s.modalHandle} />
@@ -338,23 +376,63 @@ const EditStatusModal = ({
             {ORDER_STATES.map((st) => {
               const active = selectedState === st.key;
               return (
-                <TouchableOpacity
-                  key={st.key}
-                  style={[s.stateBtn, active && { backgroundColor: st.bg, borderColor: st.color }]}
-                  onPress={() => setSelectedState(st.key)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name={st.icon as any} size={16} color={active ? st.color : '#94A3B8'} />
-                  <Text style={[s.stateBtnText, active && { color: st.color, fontWeight: '700' }]}>
-                    {st.label}
-                  </Text>
-                  {active && (
-                    <Ionicons name="checkmark-circle" size={14} color={st.color} style={{ marginLeft: 'auto' }} />
-                  )}
-                </TouchableOpacity>
+                <View key={st.key}>
+                  <TouchableOpacity
+                    style={[s.stateBtn, active && { backgroundColor: st.bg, borderColor: st.color }]}
+                    onPress={() => setSelectedState(st.key)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name={st.icon as any} size={16} color={active ? st.color : '#94A3B8'} />
+                    <Text style={[s.stateBtnText, active && { color: st.color, fontWeight: '700' }]}>
+                      {st.label}
+                    </Text>
+                    {active && (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={14}
+                        color={st.color}
+                        style={{ marginLeft: 'auto' }}
+                      />
+                    )}
+                  </TouchableOpacity>
+                </View>
               );
             })}
           </View>
+
+          {/* ✅ Champ raison — affiché pour Annulée ET Retournée */}
+          {needsReason && (
+            <View style={[s.reasonWrapper, { borderColor: reasonState?.color ?? '#E2E8F0' }]}>
+              {/* En-tête coloré */}
+              <View style={[s.reasonHeader, { backgroundColor: reasonState?.bg ?? '#F8FAFC' }]}>
+                <Ionicons
+                  name={reasonState?.icon as any ?? 'information-circle-outline'}
+                  size={14}
+                  color={reasonState?.color ?? '#64748B'}
+                />
+                <Text style={[s.reasonHeaderText, { color: reasonState?.color ?? '#64748B' }]}>
+                  Motif {selectedState === OrderStatus.CANCELLED ? 'd\'annulation' : 'de retour'}
+                </Text>
+                <Text style={s.reasonOptional}>facultatif</Text>
+              </View>
+
+              <TextInput
+                style={s.reasonInput}
+                value={reason}
+                onChangeText={setReason}           // ✅ onChangeText (pas onPress)
+                placeholder="Décrivez la raison…"
+                placeholderTextColor="#CBD5E1"
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                autoCorrect={false}
+              />
+            
+
+              {/* Compteur de caractères */}
+              <Text style={s.reasonCount}>{reason.length} / 200</Text>
+            </View>
+          )}
 
           <View style={s.modalActions}>
             <TouchableOpacity
@@ -377,6 +455,7 @@ const EditStatusModal = ({
           </View>
         </View>
       </View>
+        </TouchableWithoutFeedback>
     </Modal>
   );
 };
@@ -399,6 +478,9 @@ const AddAdvanceModal = ({
   const [amountRaw,   setAmountRaw]  = useState('');
   const [method,      setMethod]     = useState<'cash' | 'card'>('cash');
 
+  const { setupConfig } = useAppSetup();
+  const { activeAccount } = useMultiAccount();
+
   // Reset à l'ouverture
   useEffect(() => {
     if (visible) { setAmountRaw(''); setMethod('cash'); }
@@ -407,7 +489,7 @@ const AddAdvanceModal = ({
   if (!order) return null;
 
   const currentBalance = order.balance ?? order.total_amount_order;
-  const advance        = Math.min(Number(amountRaw) || 0, currentBalance);
+  const advance        = Number(amountRaw) ?? 0;
   const newBalance     = currentBalance - advance;
   const fmt            = (n: number) => `${n.toLocaleString('fr-FR')} ${symbol}`;
 
@@ -418,16 +500,22 @@ const AddAdvanceModal = ({
     }
     setSaving(true);
     try {
-      const newAmountPaid = (order.order_amount ?? 0) + advance;
-      const updated = await ordersService.updateOrder(shopId, Number(order.id), {
+      const newAmountPaid = advance;
+      const updated = await ordersService.updateOrder(shopId, order.id, {
+        total_amount_order: order.total_amount_order,
         order_amount : newAmountPaid,
         balance      : Math.max(newBalance, 0),
         has_advance  : newBalance > 0,
+        currency: setupConfig.currency?.iso_code,
+        account: activeAccount?.user.id
       });
       onSaved(updated);
       onClose();
     } catch (e: any) {
-      Alert.alert('Erreur', e?.message ?? 'Impossible d\'enregistrer l\'avance.');
+      const apiError = extractApiError(e);
+      console.log(apiError);
+
+      Alert.alert('Erreur', apiError.message ?? 'Impossible d\'enregistrer l\'avance.');
     } finally {
       setSaving(false);
     }
@@ -438,6 +526,7 @@ const AddAdvanceModal = ({
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={s.modalOverlay}
+        
       >
         <View style={s.modalSheet}>
           <View style={s.modalHandle} />
@@ -994,6 +1083,47 @@ const s = StyleSheet.create({
 
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 4 },
   modalBtn    : { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+
+  // ── Reason input ──────────────────────────────────────────────────────────
+  reasonWrapper    : {
+    borderWidth      : 1.5,
+    borderRadius     : 14,
+    overflow         : 'hidden',
+    backgroundColor  : '#fff',
+  },
+  reasonHeader     : {
+    flexDirection    : 'row',
+    alignItems       : 'center',
+    gap              : 6,
+    paddingHorizontal: 12,
+    paddingVertical  : 8,
+  },
+  reasonHeaderText : {
+    fontSize         : 12,
+    fontWeight       : '700',
+    flex             : 1,
+  },
+  reasonOptional   : {
+    fontSize         : 10,
+    color            : '#94A3B8',
+    fontStyle        : 'italic',
+  },
+  reasonInput      : {
+    minHeight        : 72,
+    paddingHorizontal: 14,
+    paddingTop       : 10,
+    paddingBottom    : 10,
+    fontSize         : 14,
+    color            : '#1E293B',
+    lineHeight       : 20,
+  },
+  reasonCount      : {
+    fontSize         : 10,
+    color            : '#CBD5E1',
+    textAlign        : 'right',
+    paddingHorizontal: 12,
+    paddingBottom    : 8,
+  },
 });
 
 export default OrderHistoryScreen;

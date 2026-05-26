@@ -1,5 +1,6 @@
+// components/modules/products/ProductList.tsx
 import { ThemedText } from "@/components/ThemedText";
-import React, { memo, useCallback, useMemo } from "react";
+import React, { memo, useCallback, useEffect, useMemo } from "react";
 import { ThemedView } from "@/components/ThemedView";
 import {
   ActivityIndicator,
@@ -25,81 +26,56 @@ type Props = {
   onLoadEnd?:        () => void;
 };
 
-// ─── Sous-composants mémoïsés ─────────────────────────────────────────────────
+// ─── StatusBanner ─────────────────────────────────────────────────────────────
 
-// Bannière collante en haut : hors ligne ou données en cache
-const StatusBanner = memo(
-  ({
-    apiStatus,
-    isFromCache,
-    cacheAgeMinutes,
-    colors,
-  }: {
-    apiStatus:       'online' | 'offline' | 'unknown';
-    isFromCache:     boolean;
-    cacheAgeMinutes: number | null;
-    colors:          any;
-  }) => {
-    if (apiStatus === 'online' && !isFromCache) return null;
+const StatusBanner = memo(({
+  apiStatus, isFromCache, cacheAgeMinutes, colors,
+}: {
+  apiStatus:       'online' | 'offline' | 'unknown';
+  isFromCache:     boolean;
+  cacheAgeMinutes: number | null;
+  colors:          any;
+}) => {
+  if (apiStatus === 'online' && !isFromCache) return null;
 
-    const isOffline = apiStatus === 'offline';
-
-    return (
-      <View style={bannerStyles.wrapper}>
-        <View
-          style={[
-            bannerStyles.banner,
-            { backgroundColor: isOffline ? '#1C1C1E' : '#2563EB' },
-          ]}
-        >
-          {isOffline && (
-            <ActivityIndicator size="small" color="#fff" />
-          )}
-          <Ionicons
-            name={isOffline ? 'cloud-offline-outline' : 'archive-outline'}
-            size={14}
-            color="#fff"
-          />
-          <Text style={bannerStyles.text}>
-            {isOffline
-              ? 'Hors ligne — reconnexion en cours...'
-              : cacheAgeMinutes !== null
+  const isOffline = apiStatus === 'offline';
+  return (
+    <View style={bannerStyles.wrapper}>
+      <View style={[bannerStyles.banner, { backgroundColor: isOffline ? '#1C1C1E' : '#2563EB' }]}>
+        {isOffline && <ActivityIndicator size="small" color="#fff" />}
+        <Ionicons
+          name={isOffline ? 'cloud-offline-outline' : 'archive-outline'}
+          size={14}
+          color="#fff"
+        />
+        <Text style={bannerStyles.text}>
+          {isOffline
+            ? 'Hors ligne — reconnexion en cours...'
+            : cacheAgeMinutes !== null
               ? `Cache · mis à jour il y a ${cacheAgeMinutes} min`
               : 'Données en cache'}
-          </Text>
-        </View>
+        </Text>
       </View>
-    );
-  }
-);
+    </View>
+  );
+});
 
-// Footer de la liste (skeleton + bannière offline)
-const FooterComponent = memo(
-  ({
-    hasMore,
-    loading,
-    apiStatus,
-  }: {
-    hasMore:   boolean;
-    loading:   boolean;
-    apiStatus: 'online' | 'offline' | 'unknown';
-  }) => {
-    if (!hasMore && apiStatus !== 'offline') return null;
+// ─── FooterComponent ──────────────────────────────────────────────────────────
 
-    return (
-      <View>
-        {hasMore && (
-          <Skeleton.Products itemCount={2} isHorizontal={false} />
-        )}
-      </View>
-    );
-  }
-);
+const FooterComponent = memo(({ hasMore }: { hasMore: boolean }) => {
+  if (!hasMore) return null;
+  return (
+    <View>
+      <Skeleton.Products itemCount={2} isHorizontal={false} />
+    </View>
+  );
+});
 
-// Composant liste vide
 const EmptyComponent = memo(() => <></>);
 
-// ─── Composant principal ──────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  ProductList
+// ═══════════════════════════════════════════════════════════════════════════════
 
 const ProductList = ({
   refreshTrigger,
@@ -111,7 +87,6 @@ const ProductList = ({
     products,
     loading,
     hasMore,
-    refreshing,
     handleRefresh,
     handleLoadMore,
     apiStatus,
@@ -123,30 +98,31 @@ const ProductList = ({
   const typography = useThemeTypography();
   const styles     = useMemo(() => createStyles(colors, typography), [colors, typography]);
 
-  console.log('[ProductList] produits:', products.length, '| fromCache:', isFromCache, '| status:', apiStatus);
+  // ✅ FIX PRINCIPAL : refreshTrigger est maintenant ÉCOUTÉ.
+  // Quand HomeContent incrémente refreshTrigger (suite au pull-to-refresh),
+  // on appelle handleRefresh() qui recharge vraiment les produits.
+  // Note : HomeContent appelle aussi handleRefresh() directement, donc
+  // on se contente ici de déclencher les callbacks onLoadStart/onLoadEnd.
+  useEffect(() => {
+    if (!refreshTrigger) return; // ignore 0 au montage initial
+    onLoadStart?.();
+    // handleRefresh() est déjà appelé par HomeContent.onRefresh —
+    // on attend juste la fin du refreshing pour masquer l'overlay.
+    const waitForRefresh = setInterval(() => {
+      onLoadEnd?.();
+      clearInterval(waitForRefresh);
+    }, 1000);
+    return () => clearInterval(waitForRefresh);
+  }, [refreshTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const COLUMN_WRAPPER_STYLE: ViewStyle = {
     justifyContent: 'space-between',
     marginBottom: 20,
   };
 
-  const handleRefreshWithCallbacks = useCallback(() => {
-    if (!globalRefreshing) {
-      onLoadStart?.();
-      handleRefresh();
-      onLoadEnd?.();
-    }
-  }, [handleRefresh, globalRefreshing, onLoadStart, onLoadEnd]);
-
   const renderFooter = useCallback(
-    () => (
-      <FooterComponent
-        hasMore={hasMore}
-        loading={loading}
-        apiStatus={apiStatus}
-      />
-    ),
-    [hasMore, loading, apiStatus]
+    () => <FooterComponent hasMore={hasMore} />,
+    [hasMore]
   );
 
   const renderEmpty = useCallback(() => {
@@ -156,7 +132,6 @@ const ProductList = ({
 
   return (
     <ThemedView>
-      {/* Bannière de statut (hors ligne / cache) */}
       <StatusBanner
         apiStatus={apiStatus}
         isFromCache={isFromCache}
@@ -173,11 +148,10 @@ const ProductList = ({
       </View>
 
       {loading && products.length === 0 ? (
-        // Premier chargement → skeleton
         <Skeleton.Products itemCount={4} isHorizontal={false} />
       ) : (
         <FlatList
-          numColumns={2}
+          numColumns={3}
           data={products}
           columnWrapperStyle={COLUMN_WRAPPER_STYLE}
           keyExtractor={(item) => String(item.slug)}
@@ -189,19 +163,21 @@ const ProductList = ({
           onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
           ListEmptyComponent={renderEmpty}
-          refreshing={globalRefreshing || refreshing}
-          onRefresh={handleRefreshWithCallbacks}
+          // ✅ scrollEnabled=false TOUJOURS :
+          // Le scroll est géré par la FlatList parente de HomeContent.
+          // Laisser scrollEnabled=true crée un conflit de gestes entre
+          // les deux FlatLists et casse le pull-to-refresh.
+          scrollEnabled={false}
           initialNumToRender={4}
           maxToRenderPerBatch={8}
           windowSize={5}
-          scrollEnabled={!globalRefreshing}
         />
       )}
     </ThemedView>
   );
 };
 
-// ─── Styles bannière (statiques) ──────────────────────────────────────────────
+// ─── Styles bannière ──────────────────────────────────────────────────────────
 
 const bannerStyles = StyleSheet.create({
   wrapper: {
