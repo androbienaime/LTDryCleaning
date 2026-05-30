@@ -215,11 +215,11 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />
-      <AppSetupProvider>           {/* ← nouveau wrapper */}
+      <AppSetupProvider>           
         <MultiAccountProvider>
           <AuthProvider>
             <OfflineProvider>
-              <ProductProvider>
+              <ProductProvider cacheLoadFallbackMs={3000}>
                 <CartProvider>
                   {/*
                     AppGate gère lui-même le NavigationContainer.

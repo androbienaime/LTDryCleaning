@@ -203,7 +203,7 @@ export default function SetupScreen({ onSetupComplete }: Props) {
             {/* Bannière d'erreur */}
             {error ? (
               <View style={styles.errorBanner}>
-                <Text style={styles.errorText}>⚠ {error}</Text>
+                <Text style={styles.errorText}>{`⚠ ${error}`}</Text>
               </View>
             ) : null}
 
@@ -246,8 +246,7 @@ export default function SetupScreen({ onSetupComplete }: Props) {
               >
                 {(state.user?.shop ?? []).length === 0 ? (
                   <Text style={styles.emptyText}>
-                    Aucun shop associé à ce compte.{'\n'}
-                    Associez d'abord ce compte à un shop depuis le panel d'administration.
+                    {"Aucun shop associé à ce compte.\nAssociez d'abord ce compte à un shop depuis le panel d'administration."}
                   </Text>
                 ) : (
                   (state.user?.shop ?? []).map(shop => (
@@ -353,9 +352,11 @@ export default function SetupScreen({ onSetupComplete }: Props) {
 
                 <View style={styles.infoBox}>
                   <Text style={styles.infoText}>
-                    Ces paramètres seront stockés localement. Seuls les comptes
-                    associés au shop <Text style={{ fontWeight: '700' }}>{state.selectedShop?.name}</Text>{' '}
-                    pourront se connecter à l'application.
+                    {`Ces paramètres seront stockés localement. Seuls les comptes associés au shop `}
+                    <Text style={{ fontWeight: '700' }}>
+                      {state.selectedShop?.name}
+                    </Text>
+                    {` pourront se connecter à l'application.`}
                   </Text>
                 </View>
 

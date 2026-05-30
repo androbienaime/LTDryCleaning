@@ -72,7 +72,6 @@ export const OfflineProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ProductOfflineStorage.getProducts(accountId),
       OrderOfflineStorage.getOrders(accountId),
       ProductOfflineStorage.getCacheAgeMinutes(accountId),
-
     ]);
     setCachedProducts(products);
     setAllOrders(orders);
@@ -110,17 +109,63 @@ export const OfflineProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // ── Actions produits ──────────────────────────────────────────────────────
 
+  /**
+   * ✅ FIX — Sauvegarde silencieuse sur disque SANS mettre à jour l'état React.
+   *
+   * Pourquoi : appeler setCachedProducts(saved) ici déclenchait le useEffect
+   * sur cachedProducts dans ProductContext. Si isFromCache était encore true
+   * (API pas encore revenue), ce useEffect remplaçait les produits affichés
+   * par le cache → écran qui "clignote" ou régresse vers le cache alors que
+   * l'utilisateur était déjà en train de voir les données API.
+   *
+   * L'état cachedProducts est uniquement alimenté par :
+   *   - loadData() au montage / changement de compte
+   *   - reloadCachedProducts() appelé explicitement si nécessaire
+   *   - clearProductCache()
+   *
+   * ProductContext lit cachedProducts via ses refs pour les fallbacks offline.
+   * Il n'a pas besoin que l'état React soit mis à jour en temps réel pendant
+   * un fetch en ligne.
+   */
   const cacheProducts = async (products: any[]) => {
     if (!accountId) return;
     setIsCachingProducts(true);
     try {
-      const saved = await ProductOfflineStorage.saveProducts(accountId, products);
-      setCachedProducts(saved);
+      // Sauvegarde sur disque uniquement — pas de setCachedProducts ici
+      await ProductOfflineStorage.saveProducts(accountId, products);
       setCacheAgeMinutes(0);
+      console.info(`[OfflineContext] ${products.length} produits sauvegardés sur disque (silencieux)`);
+    } catch (e: any) {
+      console.warn('[OfflineContext] Échec sauvegarde cache :', e?.message);
     } finally {
       setIsCachingProducts(false);
     }
   };
+
+  /**
+   * Recharge explicitement le cache depuis le disque vers l'état React.
+   * À appeler uniquement quand on sait qu'on en aura besoin (ex. passage offline).
+   * Non exposé dans le type pour l'instant — usage interne uniquement.
+   */
+  const reloadCachedProducts = useCallback(async () => {
+    if (!accountId) return;
+    const [products, age] = await Promise.all([
+      ProductOfflineStorage.getProducts(accountId),
+      ProductOfflineStorage.getCacheAgeMinutes(accountId),
+    ]);
+    setCachedProducts(products);
+    setCacheAgeMinutes(age);
+    console.info(`[OfflineContext] Cache rechargé en mémoire → ${products.length} produits`);
+  }, [accountId]);
+
+  // ── Recharger le cache en mémoire dès qu'on passe hors ligne ─────────────
+  // Ainsi ProductContext aura toujours des cachedProducts frais à afficher.
+
+  useEffect(() => {
+    if (!isOnline) {
+      reloadCachedProducts();
+    }
+  }, [isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clearProductCache = async () => {
     if (!accountId) return;
