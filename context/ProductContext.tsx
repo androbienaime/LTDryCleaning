@@ -17,11 +17,8 @@ import { extractApiError } from '@/src/api/client';
 import { getTokens } from './RefreshAccountContext';
 import { isTokenExpired } from '@/utils/jwt';
 
-// ✅ CHANGEMENT 3 — Import pour redémarrer l'app
-// Si vous utilisez Expo :
-import * as Updates from 'expo-updates';
-// Si vous utilisez React Native bare, remplacez par :
-// import RNRestart from 'react-native-restart';
+// CHANGEMENT 3 — On importe la fonction de déconnexion au lieu de reloadAsync
+// Elle efface les tokens ET redirige vers le PIN, cassant la boucle de restart
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,7 +61,7 @@ export const ProductProvider = ({
   retryIntervalMs     = 5000,
   cacheLoadFallbackMs = 5000,   // ✅ CHANGEMENT 2
 }: ProductProviderProps) => {
-  const { activeAccount, RefreshToken }  = useMultiAccount();
+  const { activeAccount, RefreshToken, logoutExpiredAccount } = useMultiAccount();
 
   const {
     isOnline,
@@ -195,24 +192,15 @@ export const ProductProvider = ({
               return;
             }
 
-            // ✅ CHANGEMENT 3 — Token expiré → redémarrer l'app
-            //    au lieu de le regénérer silencieusement
+            // Token expiré → déconnecter proprement, retour à l'écran PIN
+            // logoutExpiredAccount() vide les tokens du storage ET met
+            // activeAccountId à null → la navigation réagit automatiquement.
             if (tokens.isExpired) {
               console.warn(
-                "[ProductContext] Token expiré → redémarrage de l'application"
+                "[ProductContext] Token expiré → logoutExpiredAccount()"
               );
-              try {
-                // Expo — recharge le bundle JS proprement
-                await Updates.reloadAsync();
-              } catch {
-                // Fallback bare React Native :
-                // RNRestart.Restart();
-                console.error(
-                  "[ProductContext] Impossible de redémarrer via Updates," +
-                  " vérifiez votre setup (expo-updates / react-native-restart)."
-                );
-              }
-              return; // ne pas continuer après le redémarrage
+              await logoutExpiredAccount(String(activeAccount.id));
+              return; // stopper loadProducts, la navigation prend le relai
             }
           }
         }
@@ -303,6 +291,12 @@ export const ProductProvider = ({
           );
         } else {
           console.error(`[ProductContext] Erreur ${status}`);
+          // Ne pas boucler si c'est une erreur 401 (session invalide)
+          if (status === 401) {
+            console.warn("[ProductContext] 401 détecté dans le catch externe → session invalide, pas de retry");
+            setApiStatus('offline');
+            return;
+          }
           setApiStatus('online');
           if (refresh) setProducts([]);
         }

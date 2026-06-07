@@ -23,7 +23,6 @@ type MultiAccountContextType = {
   isLoading: boolean;
   error: string | null;
 
-  // Ajouter un compte après login API
   addAccount: (params: {
     user: AccountUser;
     token: string;
@@ -31,28 +30,21 @@ type MultiAccountContextType = {
     pin?: string;
   }) => Promise<SavedAccount>;
 
-  // Basculer vers un compte (switch manuel)
   switchToAccount: (accountId: string) => Promise<void>;
-
-  // Vérifier un PIN et switcher automatiquement
   verifyPinAndSwitch: (pin: string) => Promise<SavedAccount | null>;
-
-  // Configurer / modifier le PIN d'un compte
   setAccountPin: (accountId: string, pin: string) => Promise<void>;
-
-  // Supprimer le PIN d'un compte
   removeAccountPin: (accountId: string) => Promise<void>;
-
-  // Supprimer un compte enregistré
   removeAccount: (accountId: string) => Promise<void>;
-
-  // Comptes qui ont un PIN configuré
   accountsWithPin: SavedAccount[];
-
-  // Y a-t-il au moins un compte avec PIN (pour afficher l'écran PIN au démarrage)
   hasPinAccounts: boolean;
 
-  RefreshToken ?: (accountId: string, token1 : string, refreshToken : string | undefined) => Promise<void>; 
+  RefreshToken?: (accountId: string, token1: string, refreshToken: string | undefined) => Promise<void>;
+
+  /**
+   * Appelé quand le token est définitivement irrécupérable (expiré + refresh échoué).
+   * Efface les tokens du storage et retire le compte actif → l'app redirige vers le PIN.
+   */
+  logoutExpiredAccount: (accountId: string) => Promise<void>;
 
   clearError: () => void;
   reload: () => Promise<void>;
@@ -73,6 +65,7 @@ const MultiAccountContext = createContext<MultiAccountContextType>({
   removeAccount: async () => {},
   accountsWithPin: [],
   hasPinAccounts: false,
+  logoutExpiredAccount: async () => {},
   clearError: () => {},
   reload: async () => {},
 });
@@ -90,7 +83,6 @@ export const MultiAccountProvider: React.FC<{ children: React.ReactNode }> = ({
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
 
   // ── Charger le store au démarrage ──────────────────────────────────────────
   const loadStore = useCallback(async () => {
@@ -145,80 +137,43 @@ export const MultiAccountProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  // const switchToAccount = async (accountId: string) => {
-  //   try {
-  //     const token = await 
-  //     setIsLoading(true);
-  //     await MultiAccountStorage.switchToAccount(accountId);
-  //     await loadStore();
-  //   } catch (e) {
-  //     setError('Impossible de changer de compte.');
-  //   } finally {
-  //     setIsLoading(false);
-  //   }
-  // };
-
-  // context/MultiAccountContext.tsx — switchToAccount mis à jour
-
-const switchToAccount = async (accountId: string) => {
-  try {
-    setIsLoading(true);
- 
-    // 1. Basculer le compte actif dans le store
-    const switched = await MultiAccountStorage.switchToAccount(accountId);
-    if (!switched) throw new Error('Compte introuvable');
- 
-    console.log("Switched successfuly for email : " + switched.user.email);
-    // 2. Écrire les tokens sauvegardés de ce compte
-    await RefreshToken(accountId, switched.token, switched.refreshToken);
- 
-    await loadStore();
- 
-  // } catch (e) {
-    // setError('Impossible de changer de compte.');
-  } finally {
-    setIsLoading(false);
-  }
-};
+  const switchToAccount = async (accountId: string) => {
+    try {
+      setIsLoading(true);
+      const switched = await MultiAccountStorage.switchToAccount(accountId);
+      if (!switched) throw new Error('Compte introuvable');
+      console.log("Switched successfuly for email : " + switched.user.email);
+      await RefreshToken(accountId, switched.token, switched.refreshToken);
+      await loadStore();
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const isTokenExpired = (token: string): boolean => {
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
-
-      // exp est en secondes
       const currentTime = Date.now() / 1000;
-
       return payload.exp < currentTime;
-
     } catch (e) {
       return true;
     }
   };
-  
-  
-  const RefreshToken = async(accountId: string, token1 : string, refreshToken : string | undefined) => {
 
+  const RefreshToken = async (accountId: string, token1: string, refreshToken: string | undefined) => {
     const netState = await NetInfo.fetch();
     const isOnline = netState.isConnected && netState.isInternetReachable;
 
-    // const { isOnline } = useOffline();
-     // 2. Écrire les tokens sauvegardés de ce compte
-    //    (authService.refreshToken va les écraser avec les nouveaux si le refresh réussit)
     await storage.setData('auth_token',    token1);
     await storage.setData('refresh_token', refreshToken ?? token1);
- 
-    if(isTokenExpired(token1) && isOnline) {
+
+    if (isTokenExpired(token1) && isOnline) {
       console.log('[MultiAccount] Token expiré détecté pour le compte ' + accountId);
-      // 3. Refresh silencieux via authService
-      //    → utilise axios direct (pas de boucle infinie)
-      //    → sauvegarde automatiquement les nouveaux tokens dans storage
       try {
         const { token, refresh_token } = await authService.refreshToken(
           refreshToken ?? token1
         );
-  
         console.log('[MultiAccount] Refresh réussi — tokens mis à jour : ' + token);
-        // Mettre à jour le store avec les nouveaux tokens
         const store = await MultiAccountStorage.getStore();
         store.accounts = store.accounts.map((a) =>
           a.id === accountId
@@ -226,21 +181,59 @@ const switchToAccount = async (accountId: string) => {
             : a
         );
         await MultiAccountStorage.saveStore(store);
-  
-      } catch(e) {
-        // Refresh échoué → tokens sauvegardés utilisés
-        // L'interceptor 401 de client.ts tentera un nouveau refresh à la prochaine requête
+
+      } catch (e) {
         console.warn('[MultiAccount] Refresh silencieux échoué — token sauvegardé utilisé');
-          const apiError = extractApiError(e);
-          console.warn('  message :', apiError.message);
-          console.warn('  errors  :', JSON.stringify(apiError.errors, null, 2));
-          console.warn('  status  :', apiError.status);
-          console.warn('  raw     :', JSON.stringify(apiError.raw, null, 2));
+        const apiError = extractApiError(e);
+        console.warn('  message :', apiError.message);
+        console.warn('  status  :', apiError.status);
+
+        // ─── NOUVEAU ───────────────────────────────────────────────────────
+        // Le refresh a échoué (token révoqué / trop vieux).
+        // On marque le token comme invalide dans le store SANS supprimer
+        // le compte → l'écran PIN pourra se réafficher proprement.
+        console.warn('[MultiAccount] Refresh irrécupérable → invalidation du token');
+        await logoutExpiredAccount(accountId);
+        // ───────────────────────────────────────────────────────────────────
       }
-    }else {
+    } else {
       console.log('[MultiAccount] Token valide — pas de refresh nécessaire pour le compte ' + accountId);
     }
-  }
+  };
+
+  /**
+   * Efface les tokens du storage et désactive le compte actif.
+   * Ne supprime PAS le compte (le PIN reste) → l'écran PIN se réaffiche.
+   * Appelé par RefreshToken() en cas de refresh irrécupérable,
+   * et par ProductContext quand isExpired est détecté côté produits.
+   */
+  const logoutExpiredAccount = async (accountId: string) => {
+    try {
+      console.warn('[MultiAccount] logoutExpiredAccount → nettoyage des tokens pour ' + accountId);
+
+      // 1. Vider les tokens du storage global (ce que lit axios)
+      await storage.setData('auth_token',    '');
+      await storage.setData('refresh_token', '');
+      await MultiAccountStorage.clearAuthToken();
+
+      // 2. Invalider les tokens dans le store du compte (sans le supprimer)
+      const currentStore = await MultiAccountStorage.getStore();
+      currentStore.accounts = currentStore.accounts.map((a) =>
+        a.id === accountId
+          ? { ...a, token: '', refreshToken: '' }
+          : a
+      );
+      // 3. Désactiver le compte actif → force la navigation vers le PIN
+      currentStore.activeAccountId = null;
+      await MultiAccountStorage.saveStore(currentStore);
+
+      // 4. Recharger le store en mémoire → les observers (navigation) réagissent
+      await loadStore();
+
+    } catch (e) {
+      console.error('[MultiAccount] Erreur dans logoutExpiredAccount :', e);
+    }
+  };
 
   const verifyPinAndSwitch = async (pin: string): Promise<SavedAccount | null> => {
     try {
@@ -248,11 +241,8 @@ const switchToAccount = async (accountId: string) => {
       if (account) {
         const switched = await MultiAccountStorage.switchToAccount(account.id);
         if (!switched) throw new Error('Compte introuvable');
-
-        // 2. Écrire les tokens sauvegardés de ce compte
         await RefreshToken(account.id, switched.token, switched.refreshToken);
         console.log('[MultiAccount] PIN vérifié pour le compte ' + account.user.email);
-
         await loadStore();
       }
       return account;
@@ -311,7 +301,8 @@ const switchToAccount = async (accountId: string) => {
         hasPinAccounts,
         clearError,
         reload: loadStore,
-        RefreshToken
+        RefreshToken,
+        logoutExpiredAccount,
       }}
     >
       {children}
