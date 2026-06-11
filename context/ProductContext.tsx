@@ -195,7 +195,7 @@ export const ProductProvider = ({
             // Token expiré → déconnecter proprement, retour à l'écran PIN
             // logoutExpiredAccount() vide les tokens du storage ET met
             // activeAccountId à null → la navigation réagit automatiquement.
-            if (tokens.isExpired) {
+            if (tokens.isRefreshTokenExpired) {
               console.warn(
                 "[ProductContext] Token expiré → logoutExpiredAccount()"
               );

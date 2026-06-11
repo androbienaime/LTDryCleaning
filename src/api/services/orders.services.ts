@@ -53,6 +53,8 @@ export function cartItemsToOrderProducts(cartItems: CartItem[]) {
     declination: item.Declination?.id ?? null,
     delivery:    null,
     discount:    0,
+    offer_price: item.offerPrice ?? null,   // ← transmis tel quel au backend
+
   }));
 }
 

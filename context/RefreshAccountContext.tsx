@@ -4,6 +4,7 @@ type Tokens = {
   token: string;
   refreshToken: string;
   isExpired: boolean;
+  isRefreshTokenExpired: boolean;
 } | null;
 
 const isTokenExpired = (token: string): boolean => {
@@ -34,5 +35,6 @@ export const getTokens = async (accountId: string): Promise<Tokens> => {
     token: account.token,
     refreshToken: account.refreshToken ?? '',
     isExpired: isTokenExpired(account.token),
+    isRefreshTokenExpired : isTokenExpired(account.refreshToken ?? ''),
   };
 };

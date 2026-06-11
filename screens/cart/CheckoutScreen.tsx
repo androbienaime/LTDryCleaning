@@ -304,7 +304,7 @@ const CheckoutScreen = ({ navigation }: Props) => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Heure de livraison</Text>
         <View style={styles.timeSlots}>
-          {['08:00', '10:00', '12:00', '14:00', '16:00', '18:00'].map((t) => (
+          {['08:00', '10:00', '12:00', '14:00', '16:00', '18:00'].map((t) => ( 
             <TouchableOpacity
               key={t}
               style={[
@@ -316,7 +316,7 @@ const CheckoutScreen = ({ navigation }: Props) => {
               <Text style={[styles.timeSlotText, deliveryTime === t && { color: '#fff' }]}>
                 {t}
               </Text>
-            </TouchableOpacity>
+            </TouchableOpacity> 
           ))}
         </View>
       </View>
@@ -341,6 +341,11 @@ const CheckoutScreen = ({ navigation }: Props) => {
   const renderSummaryStep = () => (
     
     <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
+
+      <PaymentPanel
+        subtotal={totalAmount}
+        onChange={setPaymentData}
+      />
 
       {/* Client */}
       <View style={styles.summaryBlock}>
@@ -377,10 +382,7 @@ const CheckoutScreen = ({ navigation }: Props) => {
         </View>
       </View>
 
-      <PaymentPanel
-        subtotal={totalAmount}
-        onChange={setPaymentData}
-      />
+      
     </ScrollView>
   );
 

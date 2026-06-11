@@ -22,6 +22,7 @@ import {
 } from '@/src/@types/models';
 import { useAppSetup } from '@/context/AppSetupContext';
 import { getTokens } from '@/context/RefreshAccountContext';
+import { Alert } from 'react-native';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -301,6 +302,20 @@ export function useCheckout(): UseCheckoutReturn {
 
     const deliveryPayload  = buildDeliveryPayload(deliveryDate, deliveryTime);
 
+    if (discount >= totalNet) {
+      setIsPlacing(false);
+      return {
+        success: false,
+        isOffline: false,
+        message: 'Le rabais ne peut pas être supérieur ou égal au montant total.',
+        total: totalNet,
+        discount,
+        amountPaid,
+        balance: totalNet,
+        paymentMethod: paymentPayload.payment_method,
+        hasAdvance: false,
+      };
+    }
     const paymentResult = {
       total: totalNet, discount, amountPaid, balance,
       paymentMethod: paymentPayload.payment_method, hasAdvance,
@@ -327,6 +342,9 @@ export function useCheckout(): UseCheckoutReturn {
           setCustomers((prev) => prev.map((c) => (c.phone === saved.phone ? saved : c)));
         }).catch(() => {});
 
+
+       
+
         const orderPayload: Order = {
           customer           : Number(backendCustomer.id),
           currency           : currencyId,
@@ -342,6 +360,7 @@ export function useCheckout(): UseCheckoutReturn {
           secure_key         : generateSecureKey(),
           has_delivery       : false,
           order_products     : cartItemsToOrderProducts(cartItems),
+          note               : note,
         };
 
         const created = await ordersService.createOrder(shopId, orderPayload);
@@ -357,7 +376,6 @@ export function useCheckout(): UseCheckoutReturn {
         let i =0;
         // ✅ 1. Vérifier le compte avant tout
         if (activeAccount?.id) {
-          console.warn("[useCheckout] No active account, skipping refresh.");
           
           // ✅ 2. Récupérer les tokens
           const tokens = await getTokens(String(activeAccount.id));
@@ -408,6 +426,7 @@ export function useCheckout(): UseCheckoutReturn {
       secure_key         : generateSecureKey(),
       has_delivery       : false,
       order_products     : cartItemsToOrderProducts(cartItems),
+      note               : note,
       _customer          : selectedCustomer!,
       localId            : generateLocalId(),
       status             : 'pending_sync',

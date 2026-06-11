@@ -86,9 +86,9 @@ const CartItem = ({
   };
 
   // Calculer le prix total pour cet article
-  const itemPrice = item.Declination && item.Declination.price > 0
+  const itemPrice = item.displayPrice ?? item.offerPrice ?? (item.Declination && item.Declination.price > 0
     ? item.Declination.price 
-    : (item.product.discount_price || item.product.price);
+    : (item.product.discount_price || item.product.price));
   const totalPrice = itemPrice * item.quantity;
   const currencySymbol = item.product.currency?.symbol || "$";
 

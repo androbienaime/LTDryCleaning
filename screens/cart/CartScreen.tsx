@@ -1,13 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { 
-  View, 
-  Text, 
-  FlatList, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  StyleSheet,
-  Alert 
-} from "react-native";
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, Alert } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -19,131 +11,94 @@ import { useCart } from "@/context/CartContext";
 import { Ionicons } from "@expo/vector-icons";
 import CartSummary from "@/components/modules/cart/CartSummary";
 
-type CartScreenProps = {
-  navigation: NativeStackNavigationProp<any>;
-};
+type CartScreenProps = { navigation: NativeStackNavigationProp<any> };
 
 const CartScreen = ({ navigation }: CartScreenProps) => {
   const { cartItems, itemCount, totalAmount, loading, clearCart, removeItem } = useCart();
-  const colors = useThemeColors();
+  const colors     = useThemeColors();
   const typography = useThemeTypography();
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing,    setRefreshing]    = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
+  // item.id est maintenant une string ("42__base" ou "42__80")
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
 
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  // Rafraîchir le panier quand l'écran devient actif
   useFocusEffect(
     React.useCallback(() => {
-      // Réinitialiser le mode de sélection lors de la navigation
       setSelectionMode(false);
       setSelectedItems([]);
       return () => {};
     }, [])
   );
 
-  // Gérer le rafraîchissement manuel
   const handleRefresh = async () => {
     setRefreshing(true);
-    // Le contexte de panier met déjà à jour les données automatiquement
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 800);
+    setTimeout(() => setRefreshing(false), 800);
   };
 
-  // Gérer le checkout
   const handleCheckout = () => {
     if (cartItems.length === 0) {
-      Alert.alert("Panier vide", "Ajoutez des produits à votre panier avant de passer commande.");
+      Alert.alert("Panier vide", "Ajoutez des produits avant de passer commande.");
       return;
     }
     navigation.navigate("Checkout");
   };
 
-  // Gérer la vidange du panier
   const handleClearCart = () => {
-    if (cartItems.length === 0) return;
-    
-    Alert.alert(
-      "Vider le panier",
-      "Êtes-vous sûr de vouloir vider votre panier ?",
-      [
-        { text: "Annuler", style: "cancel" },
-        { 
-          text: "Vider", 
-          style: "destructive",
-          onPress: () => {
-            clearCart();
-            setSelectionMode(false);
-            setSelectedItems([]);
-          }
-        }
-      ]
+    if (!cartItems.length) return;
+    Alert.alert("Vider le panier", "Êtes-vous sûr de vouloir vider votre panier ?", [
+      { text: "Annuler", style: "cancel" },
+      { text: "Vider", style: "destructive", onPress: () => { clearCart(); setSelectionMode(false); setSelectedItems([]); } },
+    ]);
+  };
+
+  const toggleSelectionMode = () => { setSelectionMode(!selectionMode); setSelectedItems([]); };
+
+  const toggleItemSelection = (itemId: string) => {
+    setSelectedItems(prev =>
+      prev.includes(itemId) ? prev.filter(id => id !== itemId) : [...prev, itemId]
     );
   };
 
-  // Activer/désactiver le mode de sélection
-  const toggleSelectionMode = () => {
-    setSelectionMode(!selectionMode);
-    setSelectedItems([]);
-  };
-
-  // Sélectionner/désélectionner un élément
-  const toggleItemSelection = (itemId: string) => {
-    if (selectedItems.includes(itemId)) {
-      setSelectedItems(selectedItems.filter(id => id !== itemId));
-    } else {
-      setSelectedItems([...selectedItems, itemId]);
-    }
-  };
-
-  // Sélectionner tous les éléments
   const selectAllItems = () => {
-    if (selectedItems.length === cartItems.length) {
-      setSelectedItems([]);
-    } else {
-      setSelectedItems(cartItems.map(item => item.id.toString()));
-    }
+    // item.id est déjà une string — pas besoin de toString()
+    setSelectedItems(
+      selectedItems.length === cartItems.length ? [] : cartItems.map(item => item.id)
+    );
   };
 
-  // Supprimer les éléments sélectionnés
   const removeSelectedItems = async () => {
-    if (selectedItems.length === 0) return;
-    
+    if (!selectedItems.length) return;
     Alert.alert(
       "Supprimer les éléments",
-      `Êtes-vous sûr de vouloir supprimer ${selectedItems.length} élément(s) sélectionné(s) ?`,
+      `Supprimer ${selectedItems.length} élément(s) ?`,
       [
         { text: "Annuler", style: "cancel" },
-        { 
-          text: "Supprimer", 
-          style: "destructive",
+        {
+          text: "Supprimer", style: "destructive",
           onPress: async () => {
-            // Supprimer chaque élément sélectionné
+            // item.id est une string — on passe directement sans parseInt
             for (const itemId of selectedItems) {
-              await removeItem(parseInt(""+itemId));
+              await removeItem(itemId);
             }
-            
             setSelectedItems([]);
-            // Désactiver le mode de sélection s'il ne reste plus d'articles
-            if (cartItems.length - selectedItems.length <= 0) {
-              setSelectionMode(false);
-            }
-          }
-        }
+            if (cartItems.length - selectedItems.length <= 0) setSelectionMode(false);
+          },
+        },
       ]
     );
   };
 
-  // Partager le panier
   const shareCart = () => {
-    navigation.navigate("ShareCart", { 
-      selectedItems: selectionMode ? selectedItems : cartItems.map(item => item.id.toString()) 
+    navigation.navigate("ShareCart", {
+      selectedItems: selectionMode ? selectedItems : cartItems.map(item => item.id),
     });
   };
 
-  // Rendu du panier vide
+  // Nombre d'articles avec prix personnalisé
+  const offerItemCount = cartItems.filter(item => item.offerPrice != null).length;
+
   const renderEmptyCart = () => (
     <View style={styles.emptyContainer}>
       <Ionicons name="cart" size={80} color={colors.text.secondary} />
@@ -162,7 +117,6 @@ const CartScreen = ({ navigation }: CartScreenProps) => {
     </View>
   );
 
-  // Afficher l'indicateur de chargement si nécessaire
   if (loading && !refreshing) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background.primary }]}>
@@ -176,30 +130,27 @@ const CartScreen = ({ navigation }: CartScreenProps) => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background.white }]}>
       <ThemedView style={styles.container}>
-        <Header 
+        <Header
           previousButton={true}
           hideSearchBar={true}
           hideFilterIcon={true}
           hideWishlistIcon={true}
           title="Panier"
-          backgroundColor={colors.background.white} 
-          inputBackground={colors.background.primary} 
+          backgroundColor={colors.background.white}
+          inputBackground={colors.background.primary}
           style={styles.header}
           rightComponent={
             cartItems.length > 0 ? (
               <View style={styles.headerActions}>
                 {selectionMode ? (
                   <>
-                    <TouchableOpacity 
-                      style={styles.headerButton} 
-                      onPress={selectAllItems}
-                    >
+                    <TouchableOpacity style={styles.headerButton} onPress={selectAllItems}>
                       <Text style={{ color: colors.text.tertiary }}>
                         {selectedItems.length === cartItems.length ? "Désélectionner tout" : "Tout sélectionner"}
                       </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.headerButton} 
+                    <TouchableOpacity
+                      style={styles.headerButton}
                       onPress={removeSelectedItems}
                       disabled={selectedItems.length === 0}
                     >
@@ -210,16 +161,10 @@ const CartScreen = ({ navigation }: CartScreenProps) => {
                   </>
                 ) : (
                   <>
-                    <TouchableOpacity 
-                      style={styles.headerButton} 
-                      onPress={shareCart}
-                    >
+                    <TouchableOpacity style={styles.headerButton} onPress={shareCart}>
                       <Ionicons name="share-outline" size={24} color={colors.text.tertiary} />
                     </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.headerButton} 
-                      onPress={toggleSelectionMode}
-                    >
+                    <TouchableOpacity style={styles.headerButton} onPress={toggleSelectionMode}>
                       <Ionicons name="checkbox-outline" size={24} color={colors.text.tertiary} />
                     </TouchableOpacity>
                   </>
@@ -229,15 +174,26 @@ const CartScreen = ({ navigation }: CartScreenProps) => {
           }
         />
 
+        {/* Bandeau "X prix personnalisé(s)" */}
+        {offerItemCount > 0 && (
+          <View style={[styles.offerBanner, { backgroundColor: colors.button.primary + '12', borderColor: colors.button.primary + '40' }]}>
+            <Ionicons name="pricetag" size={13} color={colors.button.primary} />
+            <Text style={[styles.offerBannerText, { color: colors.button.primary }]}>
+              {offerItemCount} prix personnalisé{offerItemCount > 1 ? 's' : ''} appliqué{offerItemCount > 1 ? 's' : ''}
+            </Text>
+          </View>
+        )}
+
         <FlatList
           data={cartItems}
-          keyExtractor={(item) => item.id.toString()}
+          // item.id est une string — keyExtractor direct sans toString()
+          keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <CartItem 
-              item={item} 
+            <CartItem
+              item={item}
               selectionMode={selectionMode}
-              isSelected={selectedItems.includes(item.id.toString())}
-              onToggleSelection={() => toggleItemSelection(item.id.toString())}
+              isSelected={selectedItems.includes(item.id)}
+              onToggleSelection={() => toggleItemSelection(item.id)}
             />
           )}
           ListEmptyComponent={renderEmptyCart}
@@ -250,22 +206,16 @@ const CartScreen = ({ navigation }: CartScreenProps) => {
           <View>
             {selectionMode && (
               <View style={styles.selectionActionsContainer}>
-                <TouchableOpacity 
-                  style={[
-                    styles.selectionActionButton, 
-                    { backgroundColor: colors.button.secondary }
-                  ]} 
+                <TouchableOpacity
+                  style={[styles.selectionActionButton, { backgroundColor: colors.button.secondary }]}
                   onPress={toggleSelectionMode}
                 >
                   <Text style={{ color: colors.text.tertiary }}>Annuler</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[
-                    styles.selectionActionButton, 
-                    { 
-                      backgroundColor: selectedItems.length > 0 ? colors.button.error : colors.button.disabled 
-                    }
-                  ]} 
+                <TouchableOpacity
+                  style={[styles.selectionActionButton, {
+                    backgroundColor: selectedItems.length > 0 ? colors.button.error : colors.button.disabled,
+                  }]}
                   onPress={removeSelectedItems}
                   disabled={selectedItems.length === 0}
                 >
@@ -275,11 +225,7 @@ const CartScreen = ({ navigation }: CartScreenProps) => {
                 </TouchableOpacity>
               </View>
             )}
-            <CartSummary 
-              totalAmount={totalAmount}
-              itemCount={itemCount}
-              handleCheckout={handleCheckout}
-            />
+            <CartSummary totalAmount={totalAmount} itemCount={itemCount} handleCheckout={handleCheckout} />
           </View>
         )}
       </ThemedView>
@@ -287,96 +233,27 @@ const CartScreen = ({ navigation }: CartScreenProps) => {
   );
 };
 
-const createStyles = (colors: any) => 
-StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  header: {
-    width: "100%",
-    borderBottomWidth: 2,
-    borderBottomColor: colors.background.primary
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  headerButton: {
-    marginLeft: 16,
-    padding: 4,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  listContent: {
-    paddingBottom: 16,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  emptyTitle: {
-    fontSize: 22,
-    marginTop: 24,
-    marginBottom: 8,
-  },
-  emptyText: {
-    textAlign: "center",
-    marginBottom: 32,
-  },
-  shopButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  shopButtonText: {
-    fontSize: 16,
-  },
-  selectionActionsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#EEEEEE",
-  },
-  selectionActionButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-    marginHorizontal: 4,
-  },
-  summaryContainer: {
-    padding: 16,
-    borderTopWidth: 1,
-    backgroundColor: "#FFFFFF",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  totalRow: {
-    marginTop: 8,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#EEEEEE",
-  },
-  checkoutButton: {
-    marginTop: 16,
-    paddingVertical: 16,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-});
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    container:       { flex: 1, backgroundColor: "#fff" },
+    header:          { width: "100%", borderBottomWidth: 2, borderBottomColor: colors.background.primary },
+    headerActions:   { flexDirection: "row", alignItems: "center" },
+    headerButton:    { marginLeft: 16, padding: 4 },
+    loadingContainer:{ flex: 1, justifyContent: "center", alignItems: "center" },
+    listContent:     { paddingBottom: 16 },
+    offerBanner:     { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 16, borderBottomWidth: 1 },
+    offerBannerText: { fontSize: 13, fontWeight: '600' },
+    emptyContainer:  { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
+    emptyTitle:      { fontSize: 22, marginTop: 24, marginBottom: 8 },
+    emptyText:       { textAlign: "center", marginBottom: 32 },
+    shopButton:      { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
+    shopButtonText:  { fontSize: 16 },
+    selectionActionsContainer: { flexDirection: "row", justifyContent: "space-between", padding: 16, borderTopWidth: 1, borderTopColor: "#EEEEEE" },
+    selectionActionButton:     { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: "center", marginHorizontal: 4 },
+    summaryContainer:{ padding: 16, borderTopWidth: 1, backgroundColor: "#FFFFFF", elevation: 4, shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 3 },
+    summaryRow:      { flexDirection: "row", justifyContent: "space-between" },
+    totalRow:        { marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#EEEEEE" },
+    checkoutButton:  { marginTop: 16, paddingVertical: 16, borderRadius: 8, alignItems: "center" },
+  });
 
 export default CartScreen;

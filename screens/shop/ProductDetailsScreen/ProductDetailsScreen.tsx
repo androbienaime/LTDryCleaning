@@ -1,6 +1,5 @@
-import React, { useMemo } from 'react';
-import { FlatList, Pressable, View } from 'react-native';
-import { Keyboard } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { FlatList, Keyboard, Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/ThemedView';
 import Header from '@/components/Header';
@@ -8,30 +7,29 @@ import { useThemeColors, useThemeTypography } from '@/theme';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ShopStackParamList } from '@/src/@types/navigation';
 
-// Modules fonctionnels
-import useProductDetails from '@/hooks/useProductDetails';
+import useProductDetails   from '@/hooks/useProductDetails';
 import DeclinationSelector from './modules/DeclinationSelector';
-import QuantitySelector from './modules/QuantitySelector';
+import QuantitySelector    from './modules/QuantitySelector';
 
-// Composants de l'écran
-import ProductHeader from './components/ProductHeader';
-import ProductImages from './components/ProductImages';
+import ProductHeader      from './components/ProductHeader';
+import ProductImages      from './components/ProductImages';
 import ProductDescription from './components/ProductDescription';
-import ShippingInfo from './components/ShippingInfo';
-import AddToCartButton from './components/AddToCartButton';
+import AddToCartButton    from './components/AddToCartButton';
+import MakeOfferButton    from './components/Makeofferbutton';
+import MakeOfferSheet     from './components/MakeOfferSheet';
 
-// Styles
 import createStyles from './styles';
-import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 
 type Props = NativeStackScreenProps<ShopStackParamList, 'ProductDetails'>;
 
-const ProductDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
+// Prix personnalisé : juste un nombre, pas de token
+type ActiveOffer = { offeredPrice: number };
+
+const ProductDetailsScreen: React.FC<Props> = ({ route }) => {
   const { product } = route.params;
-  const colors = useThemeColors();
-  const typography = useThemeTypography();
-  
-  // Récupérer les fonctionnalités et états du hook personnalisé
+  const colors      = useThemeColors();
+  const typography  = useThemeTypography();
+
   const {
     organizedValues,
     selectedDeclinations,
@@ -43,62 +41,66 @@ const ProductDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
     disabledValues,
     handleDeclinationSelect,
     handleQuantityChange,
-    handleAddToCart
+    handleAddToCart,
   } = useProductDetails(product);
-  
-  // Fonctions de gestion des événements
-  const onSharePress = () => {
-    console.log('Share pressed');
-    // Implémentation du partage
-  };
-  
-  const onFavoritePress = () => {
-    console.log('Favorite pressed');
-    // Implémentation d'ajout aux favoris
-  };
-  
-  const onAddToWishlist = () => {
-    console.log('Add to wishlist');
-    // Implémentation d'ajout à la liste de souhaits
-  };
-  
+
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const [activeOffer,  setActiveOffer]  = useState<ActiveOffer | null>(null);
+
+  // Prix affiché : offre si active, sinon prix catalogue
+  const displayedPrice     = activeOffer?.offeredPrice ?? currentPrice;
+  // Prix barré : prix catalogue si offre active, sinon discount catalogue
+  const strikethroughPrice = activeOffer ? currentPrice : product.discount_price;
+
+  const handleOfferAccepted = useCallback((offer: ActiveOffer) => {
+    setActiveOffer(offer);
+  }, []);
+
+  const handleAddToCartWithOffer = useCallback(() => {
+    // Transmet le prix d'offre (number | null) — handleAddToCart l'envoie au panier
+    handleAddToCart(activeOffer?.offeredPrice ?? null);
+  }, [activeOffer, handleAddToCart]);
+
+  const onSharePress    = () => {};
+  const onFavoritePress = () => {};
+  const onAddToWishlist = () => {};
+
   const styles = useMemo(() => createStyles(colors, typography), [colors, typography]);
 
   return (
     <>
       <SafeAreaView style={styles.controlThemedView}>
         <ThemedView style={styles.controlThemedView}>
-          <Header 
+          <Header
             previousButton={true}
             hideFilterIcon={true}
             hideCartIcon={false}
-            backgroundColor={colors.background.white} 
-            inputBackground={colors.background.primary} 
+            backgroundColor={colors.background.white}
+            inputBackground={colors.background.primary}
           />
-          
+
           <FlatList
-            data={[1]} // élément factice pour FlatList
-            keyExtractor={() => "product-details"}
+            data={[1]}
+            keyExtractor={() => 'product-details'}
             renderItem={() => (
               <View>
                 <ThemedView style={styles.controlThemedView}>
-                  {/* Images du produit */}
                   <ProductImages images={currentImages} />
-                  
+
                   <Pressable onPress={() => Keyboard.dismiss()}>
                     <ThemedView style={styles.container}>
-                      {/* En-tête avec titre et prix */}
+
                       <ProductHeader
                         name={product.name}
-                        price={currentPrice}
-                        discountPrice={product.discount_price}
+                        price={displayedPrice}
+                        discountPrice={strikethroughPrice}
                         currencySymbol={product.currency.symbol}
                         onSharePress={onSharePress}
                         productQuantity={quantity}
                         onFavoritePress={onFavoritePress}
+                        offerActive={!!activeOffer}
                       />
-                      
-                      {/* Sélecteurs de déclinaisons (si le produit en a) */}
+
                       {product.declination && product.declination.length > 0 && (
                         <DeclinationSelector
                           organizedValues={organizedValues}
@@ -108,24 +110,23 @@ const ProductDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                           onDeclinationSelect={handleDeclinationSelect}
                         />
                       )}
-                      
-                      {/* Sélecteur de quantité */}
+
+                      {/* Bouton "Prix personnalisé" — toujours visible sous les déclinaisons */}
+                      <MakeOfferButton
+                        onPress={() => setSheetVisible(true)}
+                        activeOffer={activeOffer}
+                        currencySymbol={product.currency.symbol}
+                      />
+
                       <QuantitySelector
                         quantity={quantity}
                         maxQuantity={maxQuantity}
                         hasUnlimitedStock={product.has_unlimited_stock}
                         onQuantityChange={handleQuantityChange}
                       />
-                      
-                      {/* Description du produit */}
+
                       <ProductDescription description={product.description} />
-                      
-                      {/* Informations de livraison */}
-                      {/* <ShippingInfo 
-                        address="Gonaive, Rue parc Vincent"
-                        estimatedDeliveryStart="19/05/2025"
-                        estimatedDeliveryEnd="23/05/2025"
-                      /> */}
+
                     </ThemedView>
                   </Pressable>
                 </ThemedView>
@@ -137,10 +138,19 @@ const ProductDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
         </ThemedView>
       </SafeAreaView>
 
-      {/* Bouton "Ajouter au panier" fixe en bas de l'écran */}
       <AddToCartButton
-        onAddToCart={handleAddToCart}
+        onAddToCart={handleAddToCartWithOffer}
         onAddToWishlist={onAddToWishlist}
+      />
+
+      <MakeOfferSheet
+        visible={sheetVisible}
+        onClose={() => setSheetVisible(false)}
+        productId={product.id}
+        productName={product.name}
+        catalogPrice={currentPrice}
+        currencySymbol={product.currency.symbol}
+        onOfferAccepted={handleOfferAccepted}
       />
     </>
   );
