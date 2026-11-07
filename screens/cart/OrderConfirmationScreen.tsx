@@ -82,7 +82,8 @@ const OrderConfirmationScreen = ({ navigation, route }: Props) => {
 
         {/* Récapitulatif */}
         <Animated.View style={[styles.card, { opacity: fadeAnim }]}>
-          <Row label="Référence"  value={isOffline ? String(orderId).slice(0, 16) + '...' : `#${orderId}`} />
+          {/* <Row label="Référence"  value={isOffline ? String(orderId).slice(0, 16) + '...' : `#${orderId}`} /> */}
+          <Row label="No"  value={isOffline ? orderId.toString().slice(0, 16) + '...' : `#${orderId}`} />
           <Row label="Client"     value={customer.name ?? ''} />
           <Row label="Téléphone"  value={customer.phone} />
           <Row label="Livraison"  value={deliveryDateFormatted} />

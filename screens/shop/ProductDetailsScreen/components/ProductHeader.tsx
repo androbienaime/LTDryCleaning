@@ -117,7 +117,7 @@ const ProductHeader: React.FC<ProductHeaderProps> = ({
           <ThemedText style={styles.productTitle}>{name}</ThemedText>
         </ThemedView>
 
-        <ThemedView style={styles.detailsIcons}>
+        {/* <ThemedView style={styles.detailsIcons}>
           <Ionicons name="share-outline" size={32} onPress={onSharePress} />
           <Ionicons
             name="heart"
@@ -126,7 +126,7 @@ const ProductHeader: React.FC<ProductHeaderProps> = ({
             color="red"
             onPress={onFavoritePress}
           />
-        </ThemedView>
+        </ThemedView> */}
       </View>
 
       {/* Prix + total */}

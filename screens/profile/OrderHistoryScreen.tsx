@@ -570,7 +570,7 @@ const OrderHistoryScreen = ({ navigation }: any) => {
   const offlinePending = offlineOrders.filter((o) => o.status === 'pending_sync' || o.status === 'syncing').length;
 
   return (
-    <SafeAreaView style={s.container}>
+    <SafeAreaView style={s.container} edges={['left', 'right', 'bottom']}>
       <View style={[s.apiBanner, { backgroundColor: apiStatus === 'offline' ? '#FEF3C7' : '#ECFDF5' }]}>
         <Ionicons name={apiStatus === 'offline' ? 'cloud-offline-outline' : 'wifi-outline'} size={13}
           color={apiStatus === 'offline' ? '#92400E' : '#065F46'} />
@@ -705,7 +705,7 @@ const s = StyleSheet.create({
   tabIndicator     : { position: 'absolute', bottom: 0, width: '50%', height: 2.5, backgroundColor: '#6366F1', borderRadius: 2 },
   searchBar        : { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 12, paddingHorizontal: 14, backgroundColor: '#fff', borderRadius: 12, height: 44, borderWidth: 1.5, borderColor: '#E2E8F0' },
   searchInput      : { flex: 1, fontSize: 14, color: '#1E293B' },
-  summary          : { flexDirection: 'row', flexWrap: 'wrap', backgroundColor: '#fff', marginHorizontal: 12, marginBottom: 4, borderRadius: 12, padding: 14, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 2 },
+  summary          : { flexDirection: 'row', flexWrap: 'wrap', backgroundColor: '#fff', marginHorizontal: 5, marginBottom: 4, borderRadius: 12, padding: 14, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 2 },
   summaryItem      : { minWidth: '22%', alignItems: 'center', gap: 2, paddingVertical: 2 },
   summaryCount     : { fontSize: 18, fontWeight: '700' },
   summaryLabel     : { fontSize: 10, color: '#94A3B8' },

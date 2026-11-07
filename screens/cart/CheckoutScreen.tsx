@@ -14,6 +14,7 @@ import { useCheckout, CheckoutStep } from '@/hooks/useCheckout';
 import { useCart } from '@/context/CartContext';
 import type { Customer } from '@/src/@types/models';
 import PaymentPanel from './Paymentpanel';
+import ClockPicker from '@/components/ui/ClockPicker';
 
 type Props = { navigation: NativeStackNavigationProp<any> };
 
@@ -80,8 +81,10 @@ const CheckoutScreen = ({ navigation }: Props) => {
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [saveToPhone,         setSaveToPhone]         = useState(true);
   const [showDatePicker,      setShowDatePicker]      = useState(false);
-  const [showTimePicker,      setShowTimePicker]      = useState(false);
+  const [showClockPicker,     setShowClockPicker]     = useState(false);
   const [activeTab,           setActiveTab]           = useState<'saved' | 'contacts'>('saved');
+  const [isImmediate, setIsImmediate] = useState(false);
+
 
   // ── Formater la date ─────────────────────────────────────────────────────────
 
@@ -111,6 +114,17 @@ const CheckoutScreen = ({ navigation }: Props) => {
       });
     } else {
       Alert.alert('Erreur', result.message);
+    }
+  };
+
+  const handleImmediateToggle = () => {
+    const next = !isImmediate;
+    setIsImmediate(next);
+    if (next) {
+      setDeliveryDate(new Date());
+      setDeliveryTime(
+        new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+      );
     }
   };
 
@@ -276,8 +290,20 @@ const CheckoutScreen = ({ navigation }: Props) => {
         </View>
       )}
 
+      <TouchableOpacity style={styles.immediateRow} onPress={handleImmediateToggle}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.immediateLabel}>Livraison immédiate</Text>
+          <Text style={styles.immediateSubLabel}>Utilise la date et l'heure actuelles</Text>
+        </View>
+        <Ionicons
+          name={isImmediate ? 'toggle' : 'toggle-outline'}
+          size={36}
+          color={isImmediate ? '#4F46E5' : '#CBD5E1'}
+        />
+      </TouchableOpacity>
+
       {/* Date de livraison */}
-      <View style={styles.section}>
+      <View style={[styles.section, isImmediate && styles.disabledSection]} pointerEvents={isImmediate ? 'none' : 'auto'}>
         <Text style={styles.sectionTitle}>Date de livraison</Text>
         <TouchableOpacity
           style={styles.dateBtn}
@@ -301,24 +327,50 @@ const CheckoutScreen = ({ navigation }: Props) => {
       </View>
 
       {/* Heure de livraison */}
-      <View style={styles.section}>
+      <View style={[styles.section, isImmediate && styles.disabledSection]} pointerEvents={isImmediate ? 'none' : 'auto'}>
         <Text style={styles.sectionTitle}>Heure de livraison</Text>
-        <View style={styles.timeSlots}>
-          {['08:00', '10:00', '12:00', '14:00', '16:00', '18:00'].map((t) => ( 
-            <TouchableOpacity
-              key={t}
-              style={[
-                styles.timeSlot,
-                deliveryTime === t && { backgroundColor: colors.button.primary, borderColor: colors.button.primary },
-              ]}
-              onPress={() => setDeliveryTime(t)}
-            >
-              <Text style={[styles.timeSlotText, deliveryTime === t && { color: '#fff' }]}>
-                {t}
-              </Text>
-            </TouchableOpacity> 
-          ))}
-        </View>
+
+        {/* Bouton d'ouverture de l'horloge */}
+        <TouchableOpacity
+          style={[styles.dateBtn, { justifyContent: 'space-between' }]}
+          onPress={() => setShowClockPicker(true)}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Ionicons name="time-outline" size={20} color={colors.button.primary} />
+            <Text style={styles.dateBtnText}>
+              {deliveryTime || 'Sélectionner une heure'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+        </TouchableOpacity>
+
+        {/* Modal ClockPicker */}
+        <Modal visible={showClockPicker} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.clockModalSheet}>
+
+              {/* Header modal */}
+              <View style={styles.clockModalHeader}>
+                <Text style={styles.clockModalTitle}>Heure de livraison</Text>
+                <TouchableOpacity onPress={() => setShowClockPicker(false)}>
+                  <Ionicons name="close" size={22} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              <ClockPicker
+                initialHour={14}
+                initialMinute={30}
+                onTimeChange={(h, m) => {
+                  const hh = String(h).padStart(2, '0');
+                  const mm = String(m).padStart(2, '0');
+                  setDeliveryTime(`${hh}:${mm}`);
+                  // setShowClockPicker(false);
+                }}
+                onConfirm={() => setShowClockPicker(false)}
+              />
+            </View>
+          </View>
+        </Modal>
       </View>
 
       {/* Note */}
@@ -516,28 +568,30 @@ const styles = StyleSheet.create({
   addCustomerText: { fontSize: 14, fontWeight: '600' },
 
   // Modal
-  modalOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalSheet:     { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, gap: 12 },
-  modalTitle:     { fontSize: 17, fontWeight: '700', color: '#1E293B', marginBottom: 4 },
-  fieldWrapper:   { gap: 4 },
-  fieldLabel:     { fontSize: 12, fontWeight: '600', color: '#64748B' },
-  input:          { borderWidth: 1.5, borderColor: '#E2E8F0', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#1E293B' },
-  inputError:     { borderColor: '#EF4444' },
-  noteInput:      { height: 80, textAlignVertical: 'top' },
-  errorText:      { color: '#EF4444', fontSize: 12 },
-  checkRow:       { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
-  checkLabel:     { fontSize: 13, color: '#475569', flex: 1 },
-  modalActions:   { flexDirection: 'row', gap: 12, marginTop: 8 },
-  modalBtn:       { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  modalOverlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet:        { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, gap: 12 },
+  modalTitle:        { fontSize: 17, fontWeight: '700', color: '#1E293B', marginBottom: 4 },
+  fieldWrapper:      { gap: 4 },
+  fieldLabel:        { fontSize: 12, fontWeight: '600', color: '#64748B' },
+  input:             { borderWidth: 1.5, borderColor: '#E2E8F0', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#1E293B' },
+  inputError:        { borderColor: '#EF4444' },
+  noteInput:         { height: 80, textAlignVertical: 'top' },
+  errorText:         { color: '#EF4444', fontSize: 12 },
+  checkRow:          { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
+  checkLabel:        { fontSize: 13, color: '#475569', flex: 1 },
+  modalActions:      { flexDirection: 'row', gap: 12, marginTop: 8 },
+  modalBtn:          { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+
+  // Clock modal
+  clockModalSheet:   { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 32, paddingTop: 16 },
+  clockModalHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  clockModalTitle:   { fontSize: 16, fontWeight: '700', color: '#1E293B' },
 
   // Date step
   section:        { gap: 10 },
   sectionTitle:   { fontSize: 14, fontWeight: '600', color: '#475569' },
   dateBtn:        { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 1.5, borderColor: '#E2E8F0' },
   dateBtnText:    { fontSize: 15, color: '#1E293B', fontWeight: '500' },
-  timeSlots:      { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  timeSlot:       { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1.5, borderColor: '#E2E8F0' },
-  timeSlotText:   { fontSize: 14, color: '#475569' },
 
   // Selected card
   selectedCard:   { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 1.5, borderColor: '#E2E8F0' },
@@ -561,6 +615,11 @@ const styles = StyleSheet.create({
   footer:         { padding: 16, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
   actionBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 14 },
   actionBtnText:  { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  immediateRow:      { flexDirection: 'row', alignItems: 'center', padding: 14, backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 1.5, borderColor: '#E2E8F0' },
+  immediateLabel:    { fontSize: 14, fontWeight: '600', color: '#1E293B' },
+  immediateSubLabel: { fontSize: 12, color: '#94A3B8', marginTop: 2 },
+  disabledSection:   { opacity: 0.4 },
 });
 
 export default CheckoutScreen;

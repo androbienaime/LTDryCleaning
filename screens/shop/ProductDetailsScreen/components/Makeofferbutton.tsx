@@ -12,13 +12,44 @@ type Props = {
   /** Quand une offre est déjà active, on affiche le prix négocié */
   activeOffer?:   { offeredPrice: number } | null;
   currencySymbol: string;
+  compact?:       boolean; // optionnel : affiche une version plus compacte du bouton
 };
 
-const MakeOfferButton: React.FC<Props> = ({ onPress, activeOffer, currencySymbol }) => {
+const MakeOfferButton: React.FC<Props> = ({ onPress, activeOffer, currencySymbol, compact }) => {
   const colors     = useThemeColors();
   const typography = useThemeTypography();
 
   const hasOffer = !!activeOffer;
+
+  if (compact) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.compactBtn,
+          {
+            borderColor: colors.button.primary,
+            backgroundColor: hasOffer ? colors.button.primary : colors.background.white,
+            opacity: pressed ? 0.75 : 1,
+          },
+        ]}
+      >
+        <Ionicons
+          name="pricetag-outline"
+          size={14}
+          color={hasOffer ? colors.text.inverse : colors.button.primary}
+        />
+        <Text
+          style={[
+            styles.compactLabel,
+            { color: hasOffer ? colors.text.inverse : colors.button.primary },
+          ]}
+        >
+          Prix perso.
+        </Text>
+      </Pressable>
+    );
+  }
 
   return (
     <Pressable
@@ -101,6 +132,21 @@ const styles = StyleSheet.create({
   },
   sub: {
     fontSize: 12,
+  },
+  compactBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+  },
+  compactLabel: {
+    fontSize: 7,
+    lineHeight: 14,
+    textAlign: 'center',
+    fontWeight: '600',
   },
 });
 

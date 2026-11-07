@@ -105,7 +105,7 @@ const HomeScreen = () => {
 
           {/* ── SCROLLABLE — ProductProvider doit envelopper HomeContent
                pour que celui-ci puisse accéder à useProducts() ────────────── */}
-          <ProductProvider initialLimit={6}>
+          <ProductProvider initialLimit={20}>
             <HomeContent />
           </ProductProvider>
 

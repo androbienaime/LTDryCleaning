@@ -15,10 +15,22 @@ const url = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-export function generateOrderReference(): string {
-  const ts  = Date.now().toString(36).toUpperCase();
-  const rnd = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `ORD-${ts}-${rnd}`;
+// export function generateOrderReference(): string {
+//   const ts  = Date.now().toString(36).toUpperCase();
+//   const rnd = Math.random().toString(36).slice(2, 6).toUpperCase();
+//   return `ORD-${ts}-${rnd}`;
+// }
+
+export function generateOrderReference(max: number = 99999): string {
+  const min = 15600;
+
+  if (max < min) {
+    throw new Error("Le maximum doit être supérieur ou égal à 15600.");
+  }
+
+  const random = Math.floor(Math.random() * (max - min + 1)) + min;
+
+  return random.toString();
 }
 
 export function generateSecureKey(): string {

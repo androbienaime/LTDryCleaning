@@ -19,6 +19,7 @@ import MakeOfferButton    from './components/Makeofferbutton';
 import MakeOfferSheet     from './components/MakeOfferSheet';
 
 import createStyles from './styles';
+import { StyleSheet } from 'react-native';
 
 type Props = NativeStackScreenProps<ShopStackParamList, 'ProductDetails'>;
 
@@ -66,6 +67,16 @@ const ProductDetailsScreen: React.FC<Props> = ({ route }) => {
   const onAddToWishlist = () => {};
 
   const styles = useMemo(() => createStyles(colors, typography), [colors, typography]);
+  const styles2 = StyleSheet.create({
+    offerButtonAnchor: {
+    position: 'absolute',
+    right: 25,          // juste à gauche de l'icône panier
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    },
+  });
 
   return (
     <>
@@ -85,21 +96,33 @@ const ProductDetailsScreen: React.FC<Props> = ({ route }) => {
             renderItem={() => (
               <View>
                 <ThemedView style={styles.controlThemedView}>
-                  <ProductImages images={currentImages} />
+                  <ProductImages images={currentImages} height={300}/>
 
                   <Pressable onPress={() => Keyboard.dismiss()}>
                     <ThemedView style={styles.container}>
 
-                      <ProductHeader
-                        name={product.name}
-                        price={displayedPrice}
-                        discountPrice={strikethroughPrice}
-                        currencySymbol={product.currency.symbol}
-                        onSharePress={onSharePress}
-                        productQuantity={quantity}
-                        onFavoritePress={onFavoritePress}
-                        offerActive={!!activeOffer}
+                     {/* Header + MakeOfferButton fixé dessus */}
+                      <View style={{ position: 'relative' }}>
+                        <ProductHeader
+                          name={product.name}
+                          price={displayedPrice}
+                          discountPrice={strikethroughPrice}
+                          currencySymbol={product.currency.symbol}
+                          onSharePress={onSharePress}
+                          productQuantity={quantity}
+                          onFavoritePress={onFavoritePress}
+                          offerActive={!!activeOffer}
                       />
+                      {/* Bouton flottant ancré à droite du header */}
+                      <View style={styles2.offerButtonAnchor}>
+                        <MakeOfferButton
+                          onPress={() => setSheetVisible(true)}
+                          activeOffer={activeOffer}
+                          currencySymbol={product.currency.symbol}
+                          compact // ← prop pour le mode icône seule
+                        />
+                      </View>
+                    </View>
 
                       {product.declination && product.declination.length > 0 && (
                         <DeclinationSelector
@@ -112,11 +135,11 @@ const ProductDetailsScreen: React.FC<Props> = ({ route }) => {
                       )}
 
                       {/* Bouton "Prix personnalisé" — toujours visible sous les déclinaisons */}
-                      <MakeOfferButton
+                      {/* <MakeOfferButton
                         onPress={() => setSheetVisible(true)}
                         activeOffer={activeOffer}
                         currencySymbol={product.currency.symbol}
-                      />
+                      /> */}
 
                       <QuantitySelector
                         quantity={quantity}
@@ -154,6 +177,9 @@ const ProductDetailsScreen: React.FC<Props> = ({ route }) => {
       />
     </>
   );
+
+
 };
+
 
 export default ProductDetailsScreen;
