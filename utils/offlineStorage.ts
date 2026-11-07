@@ -3,7 +3,7 @@
 // Dépend de : expo-file-system, @react-native-async-storage/async-storage
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import type { OfflineProduct, OfflineOrder, SyncQueueItem } from '@/src/@types/models';
 
 export type { OfflineProduct, OfflineOrder, SyncQueueItem };
